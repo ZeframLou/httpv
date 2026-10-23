@@ -22,8 +22,12 @@ export function validBridge(
   bridge: Certificate,
 ): boolean {
   const model = readModel(bridge.specs);
-  const assumed = bridge.axioms.filter((name) =>
-    remote.specs.claims.includes(name),
+  const remoteModel = readModel(remote.specs);
+  // Even an independently proved requirement must not reinterpret an operation
+  // that the remote model defines under the same name. Extra remote declarations
+  // are permitted; every declaration shared with the bridge must agree.
+  const shared = Object.keys(remoteModel.declarations).filter((name) =>
+    Object.hasOwn(model.declarations, name),
   );
   return (
     requirements.claims.every((name) => bridge.specs.claims.includes(name)) &&
@@ -31,6 +35,6 @@ export function validBridge(
       model,
       publicContext(readModel(requirements), requirements.claims),
     ) &&
-    contextMatches(model, publicContext(readModel(remote.specs), assumed))
+    contextMatches(model, publicContext(remoteModel, shared))
   );
 }

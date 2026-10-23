@@ -5,6 +5,12 @@ import { inventoryAxioms } from "../examples/inventory.ts";
 
 export const examples = [
   {
+    module: "Independent",
+    file: "independent",
+    claims: ["Client.stock_conserved"],
+    axioms: inventoryAxioms,
+  },
+  {
     module: "V1",
     file: "v1",
     claims: ["Inventory.reservation_safe"],

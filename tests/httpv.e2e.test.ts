@@ -182,6 +182,31 @@ test("a separately checked Lean bridge establishes the client requirement", asyn
   ).toMatchObject({ status: "unknown", reason: "invalid-derivation" });
 });
 
+test("an independently proved requirement cannot hide conflicting shared definitions", async () => {
+  const independent = await authority.issue("independent", [
+    "Client.stock_conserved",
+  ]);
+  const httpv = createHTTPV({ backend: authority.backend });
+  const required = await requirements();
+  expect(
+    await httpv.checkCompatibility({
+      certificate: v1,
+      requirements: required,
+      derivation: independent,
+      allowedAxioms: inventoryAxioms,
+    }),
+  ).toMatchObject({ status: "verified", reason: "derivation" });
+  const redefined = await authority.issue("changed-definition");
+  expect(
+    await httpv.checkCompatibility({
+      certificate: redefined,
+      requirements: required,
+      derivation: independent,
+      allowedAxioms: inventoryAxioms,
+    }),
+  ).toMatchObject({ status: "unknown", reason: "invalid-derivation" });
+});
+
 test("cached verification enforces new axiom policies and detects statement tampering", async () => {
   const httpv = createHTTPV({ backend: authority.backend });
   const axioms = ["Trusted.evidence", "Trusted.stock_policy"];
