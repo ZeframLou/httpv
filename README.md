@@ -1,38 +1,48 @@
 # HTTPV
 
-HTTPV is an HTTP protocol and TypeScript library that lets clients discover
-an API's formal guarantees and check whether updates still meet their requirements.
+HTTPV (HTTP Verified) is an HTTP protocol and TypeScript library for checking
+whether an API's advertised guarantees meet a client's requirements as the API
+evolves.
 
-A checkout client may require inventory reservations to be backed by stock.
-If the supplier adds backorders, HTTPV can detect that the advertised guarantees
-no longer establish that requirement. The client decides whether to block
-requests, switch suppliers, or continue.
+Even a mathematically verified client depends on assumptions about external
+services. Those services evolve independently: a supplier that once reserved
+only available stock may introduce backorders, invalidating the client's
+assumptions without any client code changing.
 
-## Verify an advertised contract
+HTTPV lets clients recheck those assumptions against the guarantees an API
+currently advertises. Compatible updates let the client keep its existing
+correctness argument; otherwise, it can block dependent requests, switch
+providers, or revise its assumptions.
 
-Servers publish certificates through HTTP `OPTIONS` requests. Clients verify
-the cryptographic evidence, check compatibility with their local requirements,
-and periodically recheck for changes.
+## How it works
 
-HTTPV uses [ZKLean](https://github.com/ZeframLou/zklean)'s public certificate
-and verifier APIs. Certificate generation is separate: an HTTPV application
-needs a trusted verifier, not a prover or Lean installation.
+An API's guarantees are expressed as mathematical statements in
+[Lean](https://lean-lang.org/). [ZKLean](https://github.com/ZeframLou/zklean)
+produces a certificate: cryptographic evidence that those statements follow from
+declared assumptions, called axioms.
+
+The server publishes its certificate through HTTP `OPTIONS`. The client verifies
+it, checks compatibility with its own requirements, and polls for changes.
+Certificate generation happens separately from serving and checking requests.
 
 ## Trust model
 
-Clients verify the mathematical claims independently but still trust the server's deployed code and responses to implement its advertised specification. HTTPV cannot detect a server violating that specification while advertising an unchanged certificate. Each client chooses the axioms it accepts and how to handle incompatible or unverifiable dependencies.
+Clients independently verify advertised guarantees but still trust the server
+to implement them in its deployed code and responses. HTTPV cannot detect a
+server violating its specification while advertising an unchanged certificate,
+and polling can miss changes between checks. Each client chooses its trusted
+verifier, permitted axioms, and policy for failed or inconclusive checks.
 
-## Use the library
+## Get started
+
+Install with [Bun](https://bun.sh/):
 
 ```sh
 bun add git+https://git@github.com/ZeframLou/httpv.git
 ```
 
-Create a client with `createHTTPV({backend})`, where `backend` is a trusted
-certificate verifier. The [client and server example](examples/upgrades.ts)
-uses ZKLean's native verifier and demonstrates compatible and incompatible
-inventory API upgrades.
+Follow the [usage guide](docs/USAGE.md) to publish a certificate, check an API,
+and monitor updates.
 
-See [SPEC.md](SPEC.md) for the protocol and integration APIs,
-[compatibility rules](docs/ENCODING.md), and [Development](docs/DEVELOPMENT.md)
-for tests and example generation.
+[Protocol specification](SPEC.md) · [Compatibility rules](docs/ENCODING.md) ·
+[Development](docs/DEVELOPMENT.md)

@@ -1,5 +1,7 @@
 # Development
 
+For application integration, see the [usage guide](USAGE.md).
+
 Install Bun 1.4.4 and authenticate Git for read access to the private
 `ZeframLou/zklean` repository, then run:
 
