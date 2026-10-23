@@ -28,6 +28,8 @@ try {
       example.claims.join(","),
       "--axioms",
       example.axioms.join(","),
+      "--axiom-policy",
+      "examples/axioms.json",
       "--out",
       `tests/fixtures/${example.file}${example.file === "requirements" ? "" : ".statement"}.json`,
     ]);

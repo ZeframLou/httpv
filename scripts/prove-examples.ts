@@ -16,6 +16,8 @@ for (const example of examples.filter((entry) =>
     example.claims.join(","),
     "--axioms",
     example.axioms.join(","),
+    "--axiom-policy",
+    "examples/axioms.json",
     "--out",
     `examples/generated/${example.file}.json`,
   ]);
