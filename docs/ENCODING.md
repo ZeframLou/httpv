@@ -1,0 +1,31 @@
+# HTTPV compatibility profile
+
+Certificates and formal model decoding use the
+[ZKLean encoding profile](https://github.com/ZeframLou/zklean/blob/work/docs/ENCODING.md).
+HTTPV does not implement a second certificate decoder or verifier.
+
+## Requirements and compatibility
+
+
+Requirements are local JSON `{format:"zklean/requirements/1",specs}` snapshots.
+A `.lean` path resolves to `<path>.zklean.json` and requires an
+`zklean/source-manifest/1` containing the primary source, imported sources, Lake
+project files, and toolchain artifacts. Every recorded digest is checked before
+the snapshot is used. The self-contained snapshot is what the client trusts.
+
+Exact matching requires every requested claim to be certified and its complete
+resolved public context to match. Extra remote claims are permitted. Under
+`mode:"exact"`, a mismatch is `incompatible` with that explicit exact contract.
+The default implication mode returns `unknown` when no derivation is available.
+
+A bridge certificate proves the required propositions, admitting certified remote
+claims as axioms. Its actual axioms must be client-permitted axioms or verified
+remote claims. The checker compares requirement contexts, the types of assumed
+remote propositions, and every shared definition; reinterpreting a constant name
+invalidates the bridge. Extra remote claims need not appear in a bridge.
+An implication is accepted only after independently verifying both certificates.
+
+HTTPS authenticates the currently advertised resource/method association. The
+library uses exact URL paths and requires explicit development opt-in for HTTP.
+Formal authors must specify the operation, input domain, and resource association;
+the transport cannot infer their meaning from a theorem's name.

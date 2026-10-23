@@ -1,0 +1,33 @@
+name: Check
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.4.4'
+      - name: Install private ZKLean dependency
+        env:
+          ZKLEAN_READ_TOKEN: ${{ secrets.ZKLEAN_READ_TOKEN }}
+        run: |
+          if [ -z "$ZKLEAN_READ_TOKEN" ]; then
+            echo "Set ZKLEAN_READ_TOKEN to a token with read access to ZeframLou/zklean." >&2
+            exit 1
+          fi
+          git config --global url."https://x-access-token:$ZKLEAN_READ_TOKEN@github.com/".insteadOf https://git@github.com/
+          bun install --frozen-lockfile
+      - run: bun run format:check
+      - run: bun run check
