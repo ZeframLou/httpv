@@ -2,15 +2,15 @@
 
 ## Install
 
-Use [Bun](https://bun.sh/) 1.4.4 or newer, with Git read access to HTTPV and its
-[ZKLean dependency](https://github.com/ZeframLou/zklean):
+Install from npm:
 
 ```sh
-bun add git+https://git@github.com/ZeframLou/httpv.git
+npm install httpv
 ```
 
-The examples use Bun's server and file APIs. Relative file paths resolve from
-the directory where you run the application.
+You can also use `bun add httpv`. The examples run on [Bun](https://bun.sh/)
+1.4.4 or newer and use its server and file APIs. Relative file paths resolve
+from the directory where you run the application.
 
 ## Publish a certificate
 
@@ -50,8 +50,8 @@ describes, and expose the endpoint over HTTPS in production.
 
 The client supplies a trusted verifier. The following setup uses ZKLean's local
 native verifier; [install ZKLean](https://github.com/ZeframLou/zklean#install-zklean)
-on the client machine first. HTTPV installs ZKLean's TypeScript SDK as a
-dependency.
+on the client machine first. The npm installation also supplies ZKLean's
+TypeScript SDK.
 
 Save this as `httpv.ts`:
 

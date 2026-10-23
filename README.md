@@ -35,14 +35,15 @@ verifier, permitted axioms, and policy for failed or inconclusive checks.
 
 ## Get started
 
-Install with [Bun](https://bun.sh/):
+Install from npm:
 
 ```sh
-bun add git+https://git@github.com/ZeframLou/httpv.git
+npm install httpv
 ```
 
-Follow the [usage guide](docs/USAGE.md) to publish a certificate, check an API,
-and monitor updates.
+Run with [Bun](https://bun.sh/) 1.4.4 or newer. Follow the
+[usage guide](docs/USAGE.md) to publish a certificate, check an API, and monitor
+updates.
 
 [Protocol specification](SPEC.md) · [Compatibility rules](docs/ENCODING.md) ·
 [Development](docs/DEVELOPMENT.md)
