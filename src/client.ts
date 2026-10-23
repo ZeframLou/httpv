@@ -6,7 +6,8 @@ import {
   object,
   parseCertificate,
 } from "zklean/encoding";
-import { createVerifier } from "zklean";
+import { createVerifier, declarationIdentity } from "zklean";
+import { readModel } from "zklean/encoding";
 import { exactMatch, loadRequirements, validBridge } from "./compatibility.ts";
 import { discoveryHandler, MEDIA_TYPE, methodName } from "./server.ts";
 import type {
@@ -215,8 +216,18 @@ export function createHTTPV(options: ClientOptions = {}) {
     } catch {
       return { ...result, status: "unknown", reason: "invalid-derivation" };
     }
+    const remoteModel = readModel(certificate.specs);
     const bridgeResult = await verify(bridge, {
       allowedAxioms: [...input.allowedAxioms, ...certificate.specs.claims],
+      axiomPins: {
+        ...input.axiomPins,
+        ...Object.fromEntries(
+          certificate.specs.claims.map((name) => [
+            name,
+            declarationIdentity(remoteModel, name),
+          ]),
+        ),
+      },
     });
     if (bridgeResult.status !== "verified")
       return { ...result, status: "unknown", reason: "invalid-derivation" };
@@ -228,12 +239,24 @@ export function createHTTPV(options: ClientOptions = {}) {
   }
 
   function watch(input: WatchOptions): Monitor {
-    if (
-      !Number.isSafeInteger(input.interval) ||
-      input.interval < 1 ||
-      input.interval > 0x7fffffff
-    )
-      throw new Error("invalid polling interval");
+    const timeout = input.timeout ?? 10_000;
+    const maxAge = input.maxAge ?? input.interval + timeout;
+    for (const [name, value] of Object.entries({
+      interval: input.interval,
+      timeout,
+      maxAge,
+    }))
+      if (!Number.isSafeInteger(value) || value < 1 || value > 0x7fffffff)
+        throw new Error(`invalid ${name}`);
+    const options = {
+      ...input,
+      requirements:
+        typeof input.requirements === "string"
+          ? input.requirements
+          : structuredClone(input.requirements),
+      allowedAxioms: [...(input.allowedAxioms ?? [])],
+      axiomPins: { ...input.axiomPins },
+    };
     const controller = new AbortController();
     const signal = AbortSignal.any([
       controller.signal,
@@ -242,90 +265,155 @@ export function createHTTPV(options: ClientOptions = {}) {
     let current: VerificationResult | undefined;
     let inflight: Promise<VerificationResult> | undefined;
     let timer: ReturnType<typeof setTimeout> | undefined;
+    let expiry: ReturnType<typeof setTimeout> | undefined;
     let stopped = signal.aborted;
     let lastEvent: string | undefined;
-    const onError = async (error: unknown) => {
+
+    const onError = (error: unknown) => {
       try {
-        await input.onError?.(error);
+        void Promise.resolve(options.onError?.(error)).catch(() => {});
       } catch {
-        /* Application callback errors cannot stop polling. */
+        /* Diagnostics cannot interrupt monitoring. */
       }
     };
+    const publish = (result: VerificationResult): void => {
+      if (stopped) return;
+      if (expiry) clearTimeout(expiry);
+      current = { ...result, checkedAt: Date.now() };
+      if (current.status === "verified")
+        expiry = setTimeout(
+          () => publish({ status: "unknown", reason: "expired" }),
+          maxAge,
+        );
+      const event = canonical({
+        status: result.status,
+        reason: result.reason,
+        certificateId: result.certificateId ?? null,
+        modelId: result.modelId ?? null,
+      });
+      if (event === lastEvent) return;
+      lastEvent = event;
+      try {
+        const returned: unknown = options.onChange?.(structuredClone(current));
+        if (
+          returned &&
+          typeof (returned as PromiseLike<unknown>).then === "function"
+        ) {
+          void Promise.resolve(returned).catch(onError);
+          current = {
+            status: "unknown",
+            reason: "callback-error",
+            checkedAt: Date.now(),
+          };
+          stop(false);
+          onError(
+            new Error(
+              "onChange must be synchronous; gate requests with requireVerified()",
+            ),
+          );
+        }
+      } catch (error) {
+        onError(error);
+      }
+    };
+    const stop = (invalidate = true): void => {
+      if (stopped) return;
+      stopped = true;
+      if (timer) clearTimeout(timer);
+      if (expiry) clearTimeout(expiry);
+      if (invalidate)
+        current = {
+          status: "unknown",
+          reason: "stopped",
+          checkedAt: Date.now(),
+        };
+      controller.abort();
+    };
     const refresh = (): Promise<VerificationResult> => {
-      if (inflight) return inflight;
       if (stopped)
         return Promise.resolve(
-          current ?? { status: "unknown", reason: "unavailable" },
+          current ?? { status: "unknown", reason: "stopped" },
         );
+      if (inflight) return inflight;
       if (timer) clearTimeout(timer);
-      let cycle!: Promise<VerificationResult>;
-      cycle = (async () => {
+      inflight = (async () => {
+        const deadline = new AbortController();
+        const cycleSignal = AbortSignal.any([signal, deadline.signal]);
+        const expires = Date.now() + timeout;
+        const watchdog = setTimeout(() => deadline.abort(), timeout);
+        let abort!: () => void;
+        const interrupted = new Promise<never>((_, reject) => {
+          abort = () =>
+            reject(new Error(signal.aborted ? "stopped" : "timeout"));
+          cycleSignal.addEventListener("abort", abort, { once: true });
+          if (cycleSignal.aborted) abort();
+        });
         let result: VerificationResult;
         try {
-          const certificate = await query(input.url, { ...input, signal });
-          result = await checkCompatibility({
-            ...input,
-            certificate,
-            allowedAxioms: input.allowedAxioms ?? [],
-          });
+          result = await Promise.race([
+            (async () => {
+              const certificate = await query(options.url, {
+                ...options,
+                signal: cycleSignal,
+              });
+              return checkCompatibility({ ...options, certificate });
+            })(),
+            interrupted,
+          ]);
+          if (Date.now() >= expires)
+            result = { status: "unknown", reason: "timeout" };
         } catch (error) {
           result = {
             status: "unknown",
-            reason:
-              error instanceof DiscoveryError ? error.reason : "unavailable",
+            reason: cycleSignal.aborted
+              ? signal.aborted
+                ? "stopped"
+                : "timeout"
+              : error instanceof DiscoveryError
+                ? error.reason
+                : "unavailable",
             detail: String(error),
           };
+        } finally {
+          clearTimeout(watchdog);
+          cycleSignal.removeEventListener("abort", abort);
         }
-        let changed = false;
-        if (!stopped) {
-          current = result;
-          const event = canonical({
-            status: result.status,
-            reason: result.reason,
-            certificateId: result.certificateId ?? null,
-            modelId: result.modelId ?? null,
-          });
-          if (event !== lastEvent) {
-            lastEvent = event;
-            changed = true;
-          }
-        }
-        // Release the network/check slot before application code runs. A callback
-        // may safely request one immediate follow-up refresh.
-        if (inflight === cycle) inflight = undefined;
-        if (changed)
-          try {
-            await input.onChange(structuredClone(result));
-          } catch (error) {
-            await onError(error);
-          }
-        return result;
+        if (!stopped) publish(result);
+        return structuredClone(current ?? result);
       })().finally(() => {
-        if (inflight === cycle) inflight = undefined;
-        if (!stopped) {
-          if (timer) clearTimeout(timer);
+        inflight = undefined;
+        if (!stopped)
           timer = setTimeout(() => {
             void refresh();
-          }, input.interval);
-        }
+          }, options.interval);
       });
-      inflight = cycle;
       return inflight;
     };
-    const stop = () => {
-      stopped = true;
-      controller.abort();
-      if (timer) clearTimeout(timer);
-    };
-    signal.addEventListener("abort", stop, { once: true });
+    signal.addEventListener("abort", () => stop(), { once: true });
     queueMicrotask(() => {
       if (!stopped) void refresh();
     });
+    const latest = (): VerificationResult | undefined => {
+      if (
+        current?.status === "verified" &&
+        Date.now() - current.checkedAt! >= maxAge
+      )
+        publish({ status: "unknown", reason: "expired" });
+      return current && structuredClone(current);
+    };
     return {
-      stop,
+      stop: () => stop(),
       refresh,
       get current() {
-        return current && structuredClone(current);
+        return latest();
+      },
+      requireVerified() {
+        const result = latest();
+        if (stopped || result?.status !== "verified")
+          throw new Error(
+            `HTTPV dependency is not verified: ${result?.reason ?? "unchecked"}`,
+          );
+        return result;
       },
     };
   }

@@ -23,10 +23,16 @@ export type Reason =
   | "requirements-unavailable"
   | "missing-derivation"
   | "invalid-derivation";
+export type MonitorReason =
+  | "expired"
+  | "stopped"
+  | "timeout"
+  | "callback-error";
 export interface VerificationResult
   extends Omit<CertificateVerificationResult, "status" | "reason"> {
   status: Status;
-  reason: Reason;
+  reason: Reason | MonitorReason;
+  checkedAt?: number;
 }
 export interface CompatibilityOptions extends VerifyOptions {
   certificate: unknown;
@@ -46,16 +52,22 @@ export interface WatchOptions extends QueryOptions {
   url: string;
   requirements: Requirements | string;
   allowedAxioms?: readonly string[];
+  axiomPins?: Readonly<Record<string, string>>;
   interval: number;
+  /** Maximum age of an accepted check; defaults to interval + timeout. */
+  maxAge?: number;
   derivation?: unknown;
   mode?: "exact" | "implication";
-  onChange(result: VerificationResult): void | Promise<void>;
+  /** Synchronous state notification. Await async side effects outside this hook. */
+  onChange?(result: VerificationResult): undefined;
   onError?(error: unknown): void | Promise<void>;
 }
 export interface Monitor {
   stop(): void;
   refresh(): Promise<VerificationResult>;
   readonly current: VerificationResult | undefined;
+  /** Throw unless the monitor currently has a fresh verified result. */
+  requireVerified(): VerificationResult;
 }
 export type Handler = (request: Request) => Response | Promise<Response>;
 export interface ServeOptions {

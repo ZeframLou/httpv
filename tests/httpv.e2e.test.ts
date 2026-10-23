@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { createHTTPV, DiscoveryError } from "../src/client.ts";
 import { canonical, encodeBase64, readModel, sha256 } from "zklean/encoding";
+import { declarationIdentity } from "zklean";
 import { MEDIA_TYPE, methodName } from "../src/server.ts";
 import { inventoryAxioms, requirements, testAuthority } from "./helpers.ts";
 import type { Certificate, Monitor, VerificationResult } from "../src/types.ts";
@@ -189,12 +190,20 @@ test("cached verification enforces new axiom policies and detects statement tamp
     ["Inventory.assumed_safe"],
     axioms,
   );
+  const axiomPins = Object.fromEntries(
+    axioms.map((name) => [
+      name,
+      declarationIdentity(readModel(certificate.specs), name),
+    ]),
+  );
   expect(
-    (await httpv.verify(certificate, { allowedAxioms: axioms })).status,
+    (await httpv.verify(certificate, { allowedAxioms: axioms, axiomPins }))
+      .status,
   ).toBe("verified");
   const calls = authority.calls;
   expect(
-    (await httpv.verify(certificate, { allowedAxioms: axioms })).status,
+    (await httpv.verify(certificate, { allowedAxioms: axioms, axiomPins }))
+      .status,
   ).toBe("verified");
   expect(authority.calls).toBe(calls);
   expect(
@@ -210,7 +219,12 @@ test("cached verification enforces new axiom policies and detects statement tamp
     ).reason,
   ).toBe("invalid-certificate");
   expect(
-    (await createHTTPV().verify(certificate, { allowedAxioms: axioms })).reason,
+    (
+      await createHTTPV().verify(certificate, {
+        allowedAxioms: axioms,
+        axiomPins,
+      })
+    ).reason,
   ).toBe("verifier-unavailable");
   const model = readModel(v1.specs);
   delete model.declarations["Inventory.POST_reservations"];
@@ -309,7 +323,7 @@ test("watch refreshes advertisements, emits transitions, contains callback failu
   }
 });
 
-test("a change callback can request and await a follow-up refresh", async () => {
+test("a synchronous change callback can request a coalesced refresh", async () => {
   const httpv = createHTTPV({ backend: authority.backend });
   current = v1;
   let changes = 0;
@@ -321,9 +335,9 @@ test("a change callback can request and await a follow-up refresh", async () => 
     allowedAxioms: inventoryAxioms,
     mode: "exact",
     interval: 60_000,
-    async onChange() {
+    onChange() {
       changes++;
-      await monitor.refresh();
+      void monitor.refresh();
     },
   });
   try {

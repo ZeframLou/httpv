@@ -152,7 +152,8 @@ failure throws a `DiscoveryError` with reason `unavailable`,
 failure policy for these errors.
 
 `mode: "exact"` requires the requested statements and all their resolved
-definitions to match; the server may advertise extra guarantees. A matching
+definitions to match; bound-variable names and binder display annotations may
+differ, and the server may advertise extra guarantees. A matching
 theorem name alone is insufficient. `httpv.verify(certificate, { allowedAxioms })`
 checks certificate validity only; use `checkCompatibility` to establish that
 the API meets your requirements.
@@ -199,36 +200,51 @@ const monitor = httpv.watch({
   allowedAxioms: ["propext"],
   mode: "exact",
   interval: 60_000,
+  timeout: 10_000,
+  maxAge: 90_000,
   onChange(result) {
     console.log(result.status, result.reason);
-    // Apply your application's policy when the result is not "verified".
   },
   onError(error) {
     console.error(error);
   },
 });
 
-// Establish an initial result before enabling dependent functionality.
-const initial = await monitor.refresh();
-if (initial.status !== "verified") {
-  monitor.stop();
-  throw new Error(`Inventory contract check failed: ${initial.reason}`);
+await monitor.refresh();
+
+// Every dependent request checks the current, unexpired result.
+async function reserve(quantity: number) {
+  monitor.requireVerified();
+  const response = await fetch("https://inventory.example.com/reservations", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ quantity }),
+  });
+  if (!response.ok) throw new Error(`Reservation failed: ${response.status}`);
+  return response.json();
 }
 
+console.log(await reserve(3));
 process.on("SIGINT", () => monitor.stop());
 process.on("SIGTERM", () => monitor.stop());
 ```
 
 Run `bun watch.ts`. Watching starts immediately and polls again after each
-check and callback finish. `onChange` runs for the first result and when the
+check. `onChange` must be synchronous; it runs for the first result and when the
 status, reason, certificate identity, or model identity changes. Discovery
 failures become `unknown` results delivered to `onChange`; `onError` handles
 errors thrown by your change callback.
 
-`monitor.current` holds the latest result, `refresh()` requests a check, and
-`stop()` cancels discovery and future polling. A monitor reports changes;
-your application enforces the policy for dependent requests. Polling does not
-establish what the server does between checks.
+`timeout` bounds the complete discovery and verification cycle. A successful
+result expires after `maxAge`, even if the next check stalls; its default is
+`interval + timeout`. `requireVerified()` throws while unchecked, expired,
+incompatible, unknown, or stopped. Use it at the point where a request depends
+on the contract; callbacks are for notifications.
+
+`monitor.current` returns a snapshot of the latest result, `refresh()` requests
+a check, and `stop()` invalidates the result and cancels discovery and future
+polling. Simultaneous refreshes share one check. Polling does not establish what
+the server does between checks or bind a later response to a certificate.
 
 For a complete inventory upgrade demonstration, see
 [Development](DEVELOPMENT.md#run-the-upgrade-demonstration).
