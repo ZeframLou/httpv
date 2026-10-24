@@ -4,4 +4,4 @@ defaultTargets = ["HTTPVExamples"]
 
 [[lean_lib]]
 name = "HTTPVExamples"
-roots = ["Inventory", "V1", "V2", "V3", "Requirements", "Bridge", "Axioms", "ChangedDefinition"]
+roots = ["Inventory", "V1", "V2", "V3", "Requirements", "Bridge", "Axioms", "ChangedDefinition", "Independent", "RenamedOperation"]

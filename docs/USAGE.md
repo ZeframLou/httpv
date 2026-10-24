@@ -2,7 +2,9 @@
 
 ## Install
 
-Install from npm:
+The npm packages are currently unpublished. Use the
+[tarball review workflow](DEVELOPMENT.md#check-unpublished-packages) until they are
+published. After publication, install from npm:
 
 ```sh
 npm install httpv
@@ -11,10 +13,12 @@ npm install httpv
 You can also use `bun add httpv`. The examples run on [Bun](https://bun.sh/)
 1.4.4 or newer and use its server and file APIs. Relative file paths resolve
 from the directory where you run the application.
+For TypeScript checking, add `@types/bun` as a development dependency if the
+application does not already include Bun's types.
 
 ## Publish a certificate
 
-Generate the API's certificate with [ZKLean](https://github.com/ZeframLou/zklean)
+Generate the API's certificate with [ZKLean](https://github.com/ZeframLou/zklean-dist)
 before deployment and save it as `certs/reservations.json`. Its specification
 must describe the operation, inputs, and resource it covers.
 
@@ -29,7 +33,10 @@ Bun.serve({
   port: 3000,
   ...HTTPV.serve({
     routes: {
-      "POST /reservations": "./certs/reservations.json",
+      "POST /reservations": {
+        operation: "Inventory.POST_reservations",
+        certificate: "./certs/reservations.json",
+      },
     },
     fetch: application,
   }),
@@ -40,46 +47,34 @@ Run `bun server.ts`. HTTPV handles `OPTIONS` requests that accept
 `application/httpv+json`; other requests go to your handler. No verifier is
 needed to serve certificates.
 
-Route paths match exactly. A route value can be a file path, a certificate
-object, or a function returning a certificate or a promise of one. Files and
-functions are read on each discovery request, so you can update advertisements
-without restarting the server. Deploy each certificate with the behavior it
-describes, and expose the endpoint over HTTPS in production.
+Route paths match exactly. Each route binds an `operation` declaration to a
+`certificate`, supplied as an object or file path. Static objects are snapshotted
+at registration; files are reloaded on each discovery request. For atomic
+updates to both fields, supply a function returning the complete
+`{ operation, certificate }` pair or a promise of one. The operation must belong
+to the certified claims’ public dependency context. Deploy each advertisement
+with the behavior it describes, and expose the endpoint over HTTPS in production.
 
 ## Configure a client verifier
 
-The client supplies a trusted verifier. The following setup uses ZKLean's local
-native verifier; [install ZKLean](https://github.com/ZeframLou/zklean#install-zklean)
-on the client machine first. The npm installation also supplies ZKLean's
-TypeScript SDK.
-
-Save this as `httpv.ts`:
+The SDK supplies ZKLean's embedded WebAssembly verifier and pinned
+checker key. Save this as `httpv.ts`:
 
 ```ts
-import { homedir } from "node:os";
 import { createHTTPV } from "httpv";
-import { nativeBackend } from "zklean";
 
-const prefix = process.env.ZKLEAN_PREFIX ?? `${homedir()}/.local`;
-const profile = await Bun.file(`${prefix}/share/zklean/verifier.json`).json();
-
-export const httpv = createHTTPV({
-  backend: nativeBackend({
-    binary: `${prefix}/libexec/zklean-native`,
-    verifierKey: profile.verifierKey,
-    verificationKey: profile.verificationKey,
-  }),
-});
+export const httpv = createHTTPV();
 ```
 
-The key comes from your trusted local installation, never from the API being
-checked. Set `ZKLEAN_PREFIX` if you installed ZKLean elsewhere. This configuration
-needs no prover or Lean process during HTTPV checks.
+The trusted key comes from the SDK, never from the API being checked. Pairing
+checks run in a bounded worker pool outside the application event loop. Client
+verification needs no native executable, prover, circuit download, or Lean
+process. Generate certificates separately with the ZKLean CLI before deployment.
 
 You can instead supply a `ProofBackend` with an `identity` string and an async
 `verify(certificate)` method returning a boolean. That backend is trusted to
-authenticate the entire certificate. Without a backend, discovery and serving
-work, but verification returns `unknown` with reason `verifier-unavailable`.
+authenticate the entire certificate. Its identity must describe its trusted
+checker configuration. The default instance uses ZKLean's embedded backend.
 
 ## Choose your requirements
 
@@ -92,20 +87,20 @@ and approved. Save it as `contracts/approved.json`, then run this once as
 `bun requirements.ts`:
 
 ```ts
-import { parseCertificate } from "zklean";
+import { parseCertificate, requirementsFor } from "zklean";
 
 const approved = parseCertificate(
   await Bun.file("./contracts/approved.json").json(),
 );
 await Bun.write(
   "./specs/requirements.json",
-  JSON.stringify({ format: "zklean/requirements/1", specs: approved.specs }),
+  JSON.stringify(requirementsFor(approved.specs)),
 );
 ```
 
 Commit the resulting snapshot with your client. You can also generate a
 requirements snapshot from your own Lean declarations using
-[`zklean requirements`](https://github.com/ZeframLou/zklean/blob/work/docs/DEVELOPMENT.md).
+[`zklean requirements`](https://github.com/ZeframLou/zklean-dist/blob/main/docs/USAGE.md).
 
 ## Check an API before using it
 
@@ -115,9 +110,10 @@ Save this as `check.ts`, using your API's HTTPS URL:
 import { httpv } from "./httpv.ts";
 
 const url = "https://inventory.example.com/reservations";
-const certificate = await httpv.query(url, { method: "POST" });
+const advertisement = await httpv.query(url, { method: "POST" });
 const result = await httpv.checkCompatibility({
-  certificate,
+  operation: "Inventory.POST_reservations",
+  advertisement,
   requirements: "./specs/requirements.json",
   allowedAxioms: ["propext"],
   mode: "exact",
@@ -135,10 +131,18 @@ const response = await fetch(url, {
 console.log(response.status, await response.json());
 ```
 
-Run `bun check.ts`. `query` retrieves a certificate; `checkCompatibility`
-verifies it and compares its model with your requirements. Choose
-`allowedAxioms` deliberately: `["propext"]` permits the axiom used by the
+Run `bun check.ts`. `query` retrieves an advertisement containing the endpoint’s
+operation and certificate; `checkCompatibility` authenticates the certificate,
+checks the expected operation, and compares its model with your requirements.
+Choose `allowedAxioms` deliberately: `["propext"]` permits the axiom used by the
 inventory example, while `[]` accepts only certificates with no axioms.
+
+Custom axioms travel with their formal declarations and dependency definitions
+inside the certificate’s public model. Supply their reviewed fingerprints through
+`axiomPins` as well as their names in `allowedAxioms`; keep that policy under
+client control. An axiom has no proof or definition body, so an opaque proposition
+still needs an externally justified meaning. Missing or changed fingerprints
+return `unknown` with `unpinned-axiom` or `axiom-mismatch`, respectively.
 
 | Status         | Meaning                                                       |
 | -------------- | ------------------------------------------------------------- |
@@ -148,7 +152,7 @@ inventory example, while `[]` accepts only certificates with no axioms.
 
 This example blocks requests unless the result is `verified`. A discovery
 failure throws a `DiscoveryError` with reason `unavailable`,
-`missing-certificate`, or `invalid-certificate`; the application also needs a
+`missing-certificate`, or `invalid-advertisement`; the application also needs a
 failure policy for these errors.
 
 `mode: "exact"` requires the requested statements and all their resolved
@@ -173,12 +177,27 @@ Replace the compatibility check above with:
 
 ```ts
 const result = await httpv.checkCompatibility({
-  certificate,
+  operation: "Inventory.POST_reservations",
+  advertisement,
   requirements: "./specs/requirements.json",
   allowedAxioms: ["propext"],
   derivation: await Bun.file("./contracts/bridge.json").json(),
 });
 ```
+
+Every compatibility check and monitor requires the expected `operation` name,
+such as `Inventory.POST_reservations`. It must occur in the reviewed requirement
+claim closure and match the server-advertised entrypoint. Its complete resolved
+context must also match the authenticated remote claim closure. A bridge cannot
+supply an absent operation or authorize a different advertised entrypoint, even
+when the certificate contains both functions.
+
+A missing, empty, or unresolved local operation returns
+`unknown / invalid-operation-binding`. A remote operation mismatch returns
+`incompatible / operation-mismatch` in exact mode and
+`unknown / operation-mismatch` in implication mode. These checks run before
+compatibility cache lookup, so changing the entrypoint invalidates an earlier
+acceptance even when the certificate is unchanged.
 
 The default mode accepts an exact match or a valid bridge. A mismatch without
 a bridge returns `unknown` with reason `missing-derivation`; it does not prove
@@ -194,6 +213,7 @@ Save this as `watch.ts`:
 import { httpv } from "./httpv.ts";
 
 const monitor = httpv.watch({
+  operation: "Inventory.POST_reservations",
   url: "https://inventory.example.com/reservations",
   method: "POST",
   requirements: "./specs/requirements.json",
@@ -231,7 +251,8 @@ process.on("SIGTERM", () => monitor.stop());
 
 Run `bun watch.ts`. Watching starts immediately and polls again after each
 check. `onChange` must be synchronous; it runs for the first result and when the
-status, reason, certificate identity, or model identity changes. Discovery
+status, reason, advertised operation, certificate identity, or model identity
+changes. Discovery
 failures become `unknown` results delivered to `onChange`; `onError` handles
 errors thrown by your change callback.
 
@@ -246,5 +267,76 @@ a check, and `stop()` invalidates the result and cancels discovery and future
 polling. Simultaneous refreshes share one check. Polling does not establish what
 the server does between checks or bind a later response to a certificate.
 
-For a complete inventory upgrade demonstration, see
-[Development](DEVELOPMENT.md#run-the-upgrade-demonstration).
+For a complete upgrade demonstration using four committed real Groth16
+certificates and request gating, see
+[the single-unit inventory workflow](DEVELOPMENT.md#run-the-real-single-unit-workflow).
+The arbitrary-quantity arithmetic example is a separate expensive proving workload.
+
+## Derive a weaker requirement
+
+Exact matching does not discover arbitrary mathematical implications. To use a
+stronger guarantee for a weaker client requirement, certify a separate Lean
+derivation, called a bridge. Both the remote certificate and the bridge are
+verified independently.
+
+Follow ZKLean's [certificate import and bridge guide](https://github.com/ZeframLou/zklean-dist/blob/main/docs/USAGE.md)
+to authenticate and inspect `certs/reservations.json`, import its public model
+into `Remote.lean`, and prove this in a local Lake project:
+
+```lean
+import Remote
+
+theorem Client.stock_conserved (available requested remaining : Nat) :
+    Inventory.POST_reservations available requested = some remaining →
+      remaining + requested = available := by
+  intro accepted
+  exact (Inventory.reservation_safe available requested remaining accepted).2.2
+```
+
+The remote guarantee also promises a positive quantity and sufficient stock;
+this derivation extracts just the conservation property. The imported guarantee
+is an explicit assumption for the separate bridge proof. ZKLean's authenticated
+import writes the complete assumption fingerprints used when certifying it.
+
+Keep the resulting `bridge.json` and the reviewed `requirements.json` snapshot
+with the client. Supply the bridge to HTTPV:
+
+```ts
+const result = await httpv.checkCompatibility({
+  operation: "Inventory.POST_reservations",
+  advertisement,
+  requirements: "./specs/requirements.json",
+  derivation: await Bun.file("./specs/bridge.json").json(),
+  allowedAxioms: ["propext"],
+});
+if (result.status !== "verified") throw new Error(result.reason);
+```
+
+HTTPV permits a bridge to assume only authenticated remote claims and your
+explicitly permitted axioms. It checks the assumed claims' complete types and
+resolved dependency contexts. Binder display names may differ; changed
+definitions under the same names cannot share a bridge context. Operation
+bindings are conservative: names and resolved kernel content must remain stable.
+A renamed operation requires newly reviewed requirements and bindings; this
+implementation does not infer or accept a name mapping from a bridge. Valid
+certificates alone do not establish an
+implication between them.
+
+## Bind a snapshot to local Lean sources
+
+A JSON requirement snapshot is self-contained and can be deployed without Lean.
+If the application instead passes a `.lean` path, generate its sidecar with the
+CLI during development. For example:
+
+```sh
+zklean requirements --project specs --module Requirements \
+  --claims Client.stock_conserved --out specs/Requirements.lean.zklean.json
+```
+
+`requirements: "./specs/Requirements.lean"` then loads that exact sidecar and
+checks its source manifest before use. The manifest includes transitive source
+imports, Lake project files, and toolchain artifacts. All recorded files must
+remain available and unchanged; a stale or missing file returns
+`requirements-unavailable`. Regenerate and review the snapshot after edits,
+before a rebuild can hide an old source dependency. The runtime does not
+elaborate Lean or create missing sidecars.

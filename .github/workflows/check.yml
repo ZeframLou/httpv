@@ -18,7 +18,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: '1.4.4'
+          bun-version: "1.4.4"
       - name: Install private ZKLean dependency
         env:
           ZKLEAN_READ_TOKEN: ${{ secrets.ZKLEAN_READ_TOKEN }}
@@ -31,3 +31,64 @@ jobs:
           bun install --frozen-lockfile
       - run: bun run format:check
       - run: bun run check
+      - name: Check npm consumer packages
+        run: |
+          mkdir -p "$RUNNER_TEMP/sdk-package"
+          npm pack ./node_modules/zklean --pack-destination "$RUNNER_TEMP/sdk-package"
+          bun scripts/check-package.ts "$RUNNER_TEMP/sdk-package/zklean-0.1.0.tgz"
+
+  formal-artifacts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.4.4"
+      - id: sdk
+        name: Read the development SDK pin
+        run: |
+          bun -e 'import p from "./package.json"; const commit=p.devDependencies.zklean.split("#")[1]; if(!/^[0-9a-f]{40}$/.test(commit)) throw new Error("pin the SDK commit"); console.log("commit="+commit)' >> "$GITHUB_OUTPUT"
+      - name: Check SDK read credentials
+        env:
+          ZKLEAN_READ_TOKEN: ${{ secrets.ZKLEAN_READ_TOKEN }}
+        run: |
+          if [ -z "$ZKLEAN_READ_TOKEN" ]; then
+            echo "Set ZKLEAN_READ_TOKEN to a token with read-only Contents access to ZeframLou/zklean." >&2
+            exit 1
+          fi
+      - uses: actions/checkout@v4
+        with:
+          repository: ZeframLou/zklean
+          ref: ${{ steps.sdk.outputs.commit }}
+          path: .tooling/zklean
+          token: ${{ secrets.ZKLEAN_READ_TOKEN }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: .tooling/zklean -> target
+      - name: Install pinned Lean
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh -o /tmp/elan-init.sh
+          sh /tmp/elan-init.sh -y --default-toolchain leanprover/lean4:v4.36.0-rc1
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+      - name: Build the independent checker CLI
+        working-directory: .tooling/zklean
+        run: |
+          bun install --frozen-lockfile
+          cargo build --release --locked -p zklean-native
+          bash scripts/setup-exporter.sh
+          bun run compile
+      - name: Check Lean source drift and real certificates
+        env:
+          ZKLEAN_READ_TOKEN: ${{ secrets.ZKLEAN_READ_TOKEN }}
+        run: |
+          git config --global url."https://x-access-token:$ZKLEAN_READ_TOKEN@github.com/".insteadOf https://git@github.com/
+          bun install --frozen-lockfile
+          export ZKLEAN_CLI="$PWD/.tooling/zklean/dist/zklean"
+          export ZKLEAN_NATIVE="$PWD/.tooling/zklean/target/release/zklean-native"
+          export ZKLEAN_EXPORTER="$PWD/.tooling/zklean/.tooling/lean4export/.lake/build/bin/lean4export"
+          export ZKLEAN_LAKE="$(command -v lake)"
+          bun run fixtures
+          git diff --exit-code -- tests/fixtures examples/unit-inventory/certificates
+          bun scripts/check-certificates.ts

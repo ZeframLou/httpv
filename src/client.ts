@@ -8,10 +8,17 @@ import {
 } from "zklean/encoding";
 import { createVerifier, declarationIdentity } from "zklean";
 import { readModel } from "zklean/encoding";
-import { exactMatch, loadRequirements, validBridge } from "./compatibility.ts";
+import {
+  exactMatch,
+  loadRequirements,
+  operationBinding,
+  validBridge,
+} from "./compatibility.ts";
 import { discoveryHandler, MEDIA_TYPE, methodName } from "./server.ts";
+import { DISCOVERY_FORMAT, parseAdvertisement } from "./advertisement.ts";
 import type {
   Certificate,
+  Advertisement,
   ClientOptions,
   CompatibilityOptions,
   Monitor,
@@ -26,7 +33,7 @@ export class DiscoveryError extends Error {
     readonly reason:
       | "unavailable"
       | "missing-certificate"
-      | "invalid-certificate",
+      | "invalid-advertisement",
     message: string,
   ) {
     super(message);
@@ -45,7 +52,7 @@ export function createHTTPV(options: ClientOptions = {}) {
   async function query(
     url: string,
     queryOptions: QueryOptions,
-  ): Promise<Certificate> {
+  ): Promise<Advertisement> {
     const target = new URL(url);
     if (
       target.protocol !== "https:" &&
@@ -107,7 +114,10 @@ export function createHTTPV(options: ClientOptions = {}) {
       }
       const reader = response.body?.getReader();
       if (!reader)
-        throw new DiscoveryError("invalid-certificate", "empty discovery body");
+        throw new DiscoveryError(
+          "invalid-advertisement",
+          "empty discovery body",
+        );
       const chunks: Uint8Array[] = [];
       let size = 0;
       try {
@@ -117,7 +127,7 @@ export function createHTTPV(options: ClientOptions = {}) {
           size += value.byteLength;
           if (size > maxBytes)
             throw new DiscoveryError(
-              "invalid-certificate",
+              "invalid-advertisement",
               "discovery response too large",
             );
           chunks.push(value);
@@ -136,28 +146,33 @@ export function createHTTPV(options: ClientOptions = {}) {
         );
       } catch {
         throw new DiscoveryError(
-          "invalid-certificate",
+          "invalid-advertisement",
           "invalid discovery JSON",
         );
       }
-      let certificates: Record<string, unknown>;
+      let contracts: Record<string, unknown>;
       try {
-        certificates = object(body.certificates);
+        if (
+          body.format !== DISCOVERY_FORMAT ||
+          Object.keys(body).sort().join(",") !== "contracts,format"
+        )
+          throw new Error("unsupported discovery format");
+        contracts = object(body.contracts);
       } catch {
         throw new DiscoveryError(
-          "invalid-certificate",
-          "invalid certificates map",
+          "invalid-advertisement",
+          "invalid contracts map or discovery format",
         );
       }
-      if (!Object.hasOwn(certificates, method))
+      if (!Object.hasOwn(contracts, method))
         throw new DiscoveryError(
           "missing-certificate",
           `no certificate for ${method}`,
         );
       try {
-        return parseCertificate(certificates[method]);
+        return parseAdvertisement(contracts[method]);
       } catch (error) {
-        throw new DiscoveryError("invalid-certificate", String(error));
+        throw new DiscoveryError("invalid-advertisement", String(error));
       }
     } catch (error) {
       if (error instanceof DiscoveryError) throw error;
@@ -168,17 +183,67 @@ export function createHTTPV(options: ClientOptions = {}) {
   async function checkCompatibility(
     input: CompatibilityOptions,
   ): Promise<VerificationResult> {
-    let certificate: Certificate;
+    if (!input || !Array.isArray(input.allowedAxioms))
+      return { status: "unknown", reason: "invalid-options" };
+    let request: CompatibilityOptions;
     try {
-      certificate = parseCertificate(input.certificate);
+      request = {
+        advertisement: input.advertisement,
+        operation: input.operation,
+        requirements: structuredClone(input.requirements),
+        allowedAxioms: [...input.allowedAxioms],
+        ...(input.axiomPins === undefined
+          ? {}
+          : { axiomPins: structuredClone(input.axiomPins) }),
+        ...(input.derivation === undefined
+          ? {}
+          : { derivation: structuredClone(input.derivation) }),
+        ...(input.mode === undefined ? {} : { mode: input.mode }),
+      };
     } catch (error) {
       return {
         status: "unknown",
-        reason: "invalid-certificate",
+        reason: "invalid-options",
         detail: String(error),
       };
     }
-    const result = await verify(certificate, input);
+    try {
+      return await evaluateCompatibility(request);
+    } catch (error) {
+      return {
+        status: "unknown",
+        reason: "context-unavailable",
+        detail: String(error),
+      };
+    }
+  }
+
+  async function evaluateCompatibility(
+    input: CompatibilityOptions,
+  ): Promise<VerificationResult> {
+    if (typeof input.operation !== "string" || !input.operation)
+      return { status: "unknown", reason: "invalid-operation-binding" };
+    if (
+      input.mode !== undefined &&
+      !["exact", "implication"].includes(input.mode)
+    )
+      return { status: "unknown", reason: "invalid-options" };
+    const operation = input.operation;
+    let advertisement: Advertisement;
+    try {
+      advertisement = parseAdvertisement(input.advertisement);
+    } catch (error) {
+      return {
+        status: "unknown",
+        reason: "invalid-advertisement",
+        detail: String(error),
+      };
+    }
+    const certificate = advertisement.certificate;
+    const result = {
+      ...(await verify(certificate, input)),
+      advertisedOperation: advertisement.operation,
+    };
     if (result.status !== "verified") return result;
     let requirements;
     try {
@@ -191,9 +256,25 @@ export function createHTTPV(options: ClientOptions = {}) {
         detail: String(error),
       };
     }
+    const bindingError = operationBinding(
+      advertisement,
+      requirements.specs,
+      operation,
+    );
+    if (bindingError)
+      return {
+        ...result,
+        status:
+          input.mode === "exact" && bindingError === "operation-mismatch"
+            ? "incompatible"
+            : "unknown",
+        reason: bindingError,
+      };
     const key = canonical({
       remote: result.modelId,
       required: modelId(requirements.specs),
+      operation,
+      advertisedOperation: advertisement.operation,
     });
     if (compatible.get(key) || exactMatch(certificate, requirements.specs)) {
       compatible.set(key, true);
@@ -256,6 +337,9 @@ export function createHTTPV(options: ClientOptions = {}) {
           : structuredClone(input.requirements),
       allowedAxioms: [...(input.allowedAxioms ?? [])],
       axiomPins: { ...input.axiomPins },
+      ...(input.derivation === undefined
+        ? {}
+        : { derivation: structuredClone(input.derivation) }),
     };
     const controller = new AbortController();
     const signal = AbortSignal.any([
@@ -290,6 +374,7 @@ export function createHTTPV(options: ClientOptions = {}) {
         reason: result.reason,
         certificateId: result.certificateId ?? null,
         modelId: result.modelId ?? null,
+        advertisedOperation: result.advertisedOperation ?? null,
       });
       if (event === lastEvent) return;
       lastEvent = event;
@@ -352,11 +437,11 @@ export function createHTTPV(options: ClientOptions = {}) {
         try {
           result = await Promise.race([
             (async () => {
-              const certificate = await query(options.url, {
+              const advertisement = await query(options.url, {
                 ...options,
                 signal: cycleSignal,
               });
-              return checkCompatibility({ ...options, certificate });
+              return checkCompatibility({ ...options, advertisement });
             })(),
             interrupted,
           ]);

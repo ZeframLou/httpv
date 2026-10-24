@@ -1,3 +1,4 @@
+import { advertise } from "./helpers.ts";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -17,7 +18,7 @@ const adapter = createHTTPV().serve({
   routes: {
     "POST /reservations": () => {
       discoveryCount++;
-      return current;
+      return advertise(current);
     },
   },
   fetch: (request) =>
@@ -50,10 +51,13 @@ test("live OPTIONS discovery authenticates resource/method and preserves normal 
   const httpv = createHTTPV({ backend: authority.backend });
   current = v1;
   const certificate = await httpv.query(url, local);
-  expect(certificate).toEqual(v1);
+  expect(certificate).toEqual(advertise(v1));
   expect(
-    (await httpv.verify(certificate, { allowedAxioms: inventoryAxioms }))
-      .status,
+    (
+      await httpv.verify(certificate.certificate, {
+        allowedAxioms: inventoryAxioms,
+      })
+    ).status,
   ).toBe("verified");
   const response = await fetch(url, {
     method: "OPTIONS",
@@ -99,7 +103,8 @@ test("compatible upgrade adds claims; changed definitions with identical names f
     expect(
       (
         await httpv.checkCompatibility({
-          certificate: remote,
+          operation: "Inventory.POST_reservations",
+          advertisement: remote,
           requirements: required,
           allowedAxioms: inventoryAxioms,
           mode: "exact",
@@ -110,23 +115,26 @@ test("compatible upgrade adds claims; changed definitions with identical names f
   current = v3;
   const remote = await httpv.query(url, local);
   expect(
-    (await httpv.verify(remote, { allowedAxioms: inventoryAxioms })).status,
+    (await httpv.verify(remote.certificate, { allowedAxioms: inventoryAxioms }))
+      .status,
   ).toBe("verified");
   expect(
     await httpv.checkCompatibility({
-      certificate: remote,
+      operation: "Inventory.POST_reservations",
+      advertisement: remote,
       requirements: required,
       allowedAxioms: inventoryAxioms,
       mode: "exact",
     }),
-  ).toMatchObject({ status: "incompatible", reason: "requirements-not-met" });
+  ).toMatchObject({ status: "incompatible", reason: "operation-mismatch" });
   expect(
     await httpv.checkCompatibility({
-      certificate: remote,
+      operation: "Inventory.POST_reservations",
+      advertisement: remote,
       requirements: required,
       allowedAxioms: inventoryAxioms,
     }),
-  ).toMatchObject({ status: "unknown", reason: "missing-derivation" });
+  ).toMatchObject({ status: "unknown", reason: "operation-mismatch" });
 });
 
 test("a separately checked Lean bridge establishes the client requirement", async () => {
@@ -134,14 +142,16 @@ test("a separately checked Lean bridge establishes the client requirement", asyn
   const required = await requirements();
   expect(
     await httpv.checkCompatibility({
-      certificate: v1,
+      operation: "Inventory.POST_reservations",
+      advertisement: advertise(v1, "Inventory.POST_reservations"),
       requirements: required,
       allowedAxioms: inventoryAxioms,
     }),
   ).toMatchObject({ status: "unknown", reason: "missing-derivation" });
   expect(
     await httpv.checkCompatibility({
-      certificate: v1,
+      operation: "Inventory.POST_reservations",
+      advertisement: advertise(v1, "Inventory.POST_reservations"),
       requirements: required,
       derivation: bridge,
       allowedAxioms: inventoryAxioms,
@@ -149,7 +159,8 @@ test("a separately checked Lean bridge establishes the client requirement", asyn
   ).toMatchObject({ status: "verified", reason: "derivation" });
   expect(
     await httpv.checkCompatibility({
-      certificate: v1,
+      operation: "Inventory.POST_reservations",
+      advertisement: advertise(v1, "Inventory.POST_reservations"),
       requirements: required,
       derivation: bridge,
       allowedAxioms: inventoryAxioms,
@@ -158,7 +169,8 @@ test("a separately checked Lean bridge establishes the client requirement", asyn
   ).toMatchObject({ status: "incompatible", reason: "requirements-not-met" });
   expect(
     await httpv.checkCompatibility({
-      certificate: v2,
+      operation: "Inventory.POST_reservations",
+      advertisement: advertise(v2, "Inventory.POST_reservations"),
       requirements: required,
       derivation: bridge,
       allowedAxioms: inventoryAxioms,
@@ -166,20 +178,171 @@ test("a separately checked Lean bridge establishes the client requirement", asyn
   ).toMatchObject({ status: "verified", reason: "derivation" });
   expect(
     await httpv.checkCompatibility({
-      certificate: v3,
+      operation: "Inventory.POST_reservations",
+      advertisement: advertise(v3, "Inventory.POST_reservations"),
       requirements: required,
       derivation: bridge,
       allowedAxioms: inventoryAxioms,
     }),
-  ).toMatchObject({ status: "unknown", reason: "invalid-derivation" });
+  ).toMatchObject({ status: "unknown", reason: "operation-mismatch" });
   expect(
     await httpv.checkCompatibility({
-      certificate: v1,
+      operation: "Inventory.POST_reservations",
+      advertisement: advertise(v1, "Inventory.POST_reservations"),
       requirements: required,
       derivation: v1,
       allowedAxioms: inventoryAxioms,
     }),
   ).toMatchObject({ status: "unknown", reason: "invalid-derivation" });
+});
+
+test("an independently proved requirement cannot hide conflicting shared definitions", async () => {
+  const independent = await authority.issue("independent", [
+    "Client.stock_conserved",
+  ]);
+  const httpv = createHTTPV({ backend: authority.backend });
+  const required = await requirements();
+  expect(
+    await httpv.checkCompatibility({
+      operation: "Inventory.POST_reservations",
+      advertisement: advertise(v1, "Inventory.POST_reservations"),
+      requirements: required,
+      derivation: independent,
+      allowedAxioms: inventoryAxioms,
+    }),
+  ).toMatchObject({ status: "verified", reason: "derivation" });
+  const redefined = await authority.issue("changed-definition");
+  expect(
+    await httpv.checkCompatibility({
+      operation: "Inventory.POST_reservations",
+      advertisement: advertise(redefined, "Inventory.POST_reservations"),
+      requirements: required,
+      derivation: independent,
+      allowedAxioms: inventoryAxioms,
+    }),
+  ).toMatchObject({ status: "unknown", reason: "operation-mismatch" });
+});
+
+test("operation bindings reject renamed remote operations and missing local policy", async () => {
+  const independent = await authority.issue("independent", [
+    "Client.stock_conserved",
+  ]);
+  const remote = await authority.issue(
+    "renamed-operation",
+    ["Backorders.reservation_safe"],
+    [],
+  );
+  const httpv = createHTTPV({ backend: authority.backend });
+  expect(
+    await httpv.checkCompatibility({
+      advertisement: advertise(remote, "Backorders.POST_reservations"),
+      requirements: await requirements(),
+      derivation: independent,
+      operation: "Inventory.POST_reservations",
+      allowedAxioms: inventoryAxioms,
+    }),
+  ).toMatchObject({ status: "unknown", reason: "operation-mismatch" });
+  const input = {
+    advertisement: advertise(v1),
+    requirements: { format: "zklean/requirements/1" as const, specs: v1.specs },
+    allowedAxioms: inventoryAxioms,
+    operation: "Inventory.POST_reservations",
+  };
+  expect((await httpv.checkCompatibility(input)).status).toBe("verified");
+  for (const operation of ["", "Missing.operation"])
+    expect(
+      await httpv.checkCompatibility({ ...input, operation }),
+    ).toMatchObject({ status: "unknown", reason: "invalid-operation-binding" });
+  expect(
+    await httpv.checkCompatibility({
+      ...input,
+      operation: undefined,
+    } as unknown as Parameters<typeof httpv.checkCompatibility>[0]),
+  ).toMatchObject({ status: "unknown", reason: "invalid-operation-binding" });
+  expect(
+    await httpv.checkCompatibility({
+      ...input,
+      mode: "invalid",
+    } as unknown as Parameters<typeof httpv.checkCompatibility>[0]),
+  ).toMatchObject({ status: "unknown", reason: "invalid-options" });
+});
+
+test("an entrypoint change cannot reuse compatibility cached for the same certificate", async () => {
+  const httpv = createHTTPV({ backend: authority.backend });
+  const input = {
+    advertisement: advertise(v1),
+    operation: "Inventory.POST_reservations",
+    requirements: { format: "zklean/requirements/1" as const, specs: v1.specs },
+    allowedAxioms: inventoryAxioms,
+    mode: "exact" as const,
+  };
+  expect((await httpv.checkCompatibility(input)).status).toBe("verified");
+  expect(Object.hasOwn(readModel(v1.specs).declarations, "Nat.sub")).toBe(true);
+  const rebound = advertise(v1, "Nat.sub");
+  expect(
+    await httpv.checkCompatibility({ ...input, advertisement: rebound }),
+  ).toMatchObject({
+    status: "incompatible",
+    reason: "operation-mismatch",
+    advertisedOperation: "Nat.sub",
+  });
+  const independent = await authority.issue("independent", [
+    "Client.stock_conserved",
+  ]);
+  expect(
+    await httpv.checkCompatibility({
+      ...input,
+      advertisement: rebound,
+      requirements: await requirements(),
+      derivation: independent,
+      mode: "implication",
+    }),
+  ).toMatchObject({ status: "unknown", reason: "operation-mismatch" });
+});
+
+test("discovery requires a supported envelope and an explicit certified entrypoint", async () => {
+  for (const body of [
+    { certificates: { POST: v1 } },
+    { format: "httpv/2", contracts: { POST: advertise(v1) } },
+    { format: "httpv/1", contracts: { POST: v1 } },
+    {
+      format: "httpv/1",
+      contracts: { POST: advertise(v1, "Missing.operation") },
+    },
+  ]) {
+    const client = createHTTPV({
+      fetch: async () =>
+        Response.json(body, { headers: { "content-type": MEDIA_TYPE } }),
+    });
+    await expect(
+      client.query("https://example.test/reservations", { method: "POST" }),
+    ).rejects.toMatchObject({ reason: "invalid-advertisement" });
+  }
+});
+
+test("server snapshots static advertisements while providers support atomic updates", async () => {
+  const source = {
+    operation: "Inventory.POST_reservations",
+    certificate: structuredClone(v1),
+  };
+  const httpv = createHTTPV({ backend: authority.backend });
+  const app = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    ...httpv.serve({
+      routes: { "POST /reservations": source },
+      fetch: () => new Response("ok"),
+    }),
+  });
+  try {
+    source.operation = "Nat.sub";
+    source.certificate.specs = structuredClone(v3.specs);
+    expect(
+      await httpv.query(`http://127.0.0.1:${app.port}/reservations`, local),
+    ).toEqual(advertise(v1));
+  } finally {
+    app.stop(true);
+  }
 });
 
 test("cached verification enforces new axiom policies and detects statement tampering", async () => {
@@ -225,7 +388,7 @@ test("cached verification enforces new axiom policies and detects statement tamp
         axiomPins,
       })
     ).reason,
-  ).toBe("verifier-unavailable");
+  ).toBe("invalid-certificate");
   const model = readModel(v1.specs);
   delete model.declarations["Inventory.POST_reservations"];
   const unresolved = {
@@ -286,6 +449,7 @@ test("watch refreshes advertisements, emits transitions, contains callback failu
   const changes: VerificationResult[] = [];
   const errors: unknown[] = [];
   const monitor = httpv.watch({
+    operation: "Inventory.POST_reservations",
     url,
     ...local,
     requirements: { format: "zklean/requirements/1", specs: v1.specs },
@@ -329,6 +493,7 @@ test("a synchronous change callback can request a coalesced refresh", async () =
   let changes = 0;
   let monitor!: Monitor;
   monitor = httpv.watch({
+    operation: "Inventory.POST_reservations",
     url,
     ...local,
     requirements: { format: "zklean/requirements/1", specs: v1.specs },
@@ -364,7 +529,7 @@ test("periodic polling reports an unavailable dependency and honors external can
       calls++;
       return calls === 1
         ? Response.json(
-            { certificates: { POST: v1 } },
+            { format: "httpv/1", contracts: { POST: advertise(v1) } },
             { headers: { "content-type": MEDIA_TYPE } },
           )
         : new Response("offline", { status: 503 });
@@ -376,6 +541,7 @@ test("periodic polling reports an unavailable dependency and honors external can
       reject(new Error("watch did not poll"));
     }, 2000);
     monitor = client.watch({
+      operation: "Inventory.POST_reservations",
       url: "https://example.test/reservations",
       method: "POST",
       requirements: { format: "zklean/requirements/1", specs: v1.specs },
@@ -409,7 +575,7 @@ test("discovery rejects redirects, malformed media, oversized and malformed cert
   });
   await expect(
     client.query("https://example.test/reservations", { method: "POST" }),
-  ).rejects.toMatchObject({ reason: "invalid-certificate" });
+  ).rejects.toMatchObject({ reason: "invalid-advertisement" });
   await new Promise((resolve) => setTimeout(resolve, 0));
   expect(captured[0]).toMatchObject({
     method: "OPTIONS",
@@ -418,7 +584,8 @@ test("discovery rejects redirects, malformed media, oversized and malformed cert
     headers: { Accept: MEDIA_TYPE, "Cache-Control": "no-cache" },
   });
   const bad = createHTTPV({
-    fetch: async () => Response.json({ certificates: { POST: v1 } }),
+    fetch: async () =>
+      Response.json({ format: "httpv/1", contracts: { POST: advertise(v1) } }),
   });
   await expect(
     bad.query("https://example.test/reservations", { method: "POST" }),
@@ -429,7 +596,8 @@ test("caller mutation during verification cannot substitute a different public m
   const httpv = createHTTPV({ backend: authority.backend });
   const supplied = structuredClone(v3);
   const result = httpv.checkCompatibility({
-    certificate: supplied,
+    operation: "Inventory.POST_reservations",
+    advertisement: advertise(supplied, "Inventory.POST_reservations"),
     requirements: { format: "zklean/requirements/1", specs: v1.specs },
     allowedAxioms: inventoryAxioms,
     mode: "exact",
@@ -450,7 +618,8 @@ test("identical proposition syntax cannot hide a redefined operation", async () 
   const httpv = createHTTPV({ backend: authority.backend });
   expect(
     await httpv.checkCompatibility({
-      certificate: redefined,
+      operation: "Inventory.POST_reservations",
+      advertisement: advertise(redefined, "Inventory.POST_reservations"),
       requirements: { format: "zklean/requirements/1", specs: v1.specs },
       allowedAxioms: inventoryAxioms,
       mode: "exact",
@@ -458,12 +627,13 @@ test("identical proposition syntax cannot hide a redefined operation", async () 
   ).toMatchObject({ status: "incompatible" });
   expect(
     await httpv.checkCompatibility({
-      certificate: redefined,
+      operation: "Inventory.POST_reservations",
+      advertisement: advertise(redefined, "Inventory.POST_reservations"),
       requirements: await requirements(),
       derivation: bridge,
       allowedAxioms: inventoryAxioms,
     }),
-  ).toMatchObject({ status: "unknown", reason: "invalid-derivation" });
+  ).toMatchObject({ status: "unknown", reason: "operation-mismatch" });
 });
 
 test("file advertisements refresh in place and stale Lean requirement sidecars fail closed", async () => {
@@ -477,21 +647,30 @@ test("file advertisements refresh in place and stale Lean requirement sidecars f
     hostname: "127.0.0.1",
     port: 0,
     ...httpv.serve({
-      routes: { "POST /reservations": path, "inspect /reservations": path },
+      routes: {
+        "POST /reservations": {
+          operation: "Inventory.POST_reservations",
+          certificate: path,
+        },
+        "inspect /reservations": {
+          operation: "Inventory.POST_reservations",
+          certificate: path,
+        },
+      },
       fetch: () => new Response("ordinary"),
     }),
   });
   const target = `http://127.0.0.1:${fileServer.port}/reservations`;
   try {
-    expect(await httpv.query(target, local)).toEqual(v1);
+    expect(await httpv.query(target, local)).toEqual(advertise(v1));
     expect(await httpv.query(target, { ...local, method: "inspect" })).toEqual(
-      v1,
+      advertise(v1),
     );
     await expect(
       httpv.query(target, { ...local, method: "INSPECT" }),
     ).rejects.toMatchObject({ reason: "missing-certificate" });
     await Bun.write(path, JSON.stringify(v3));
-    expect(await httpv.query(target, local)).toEqual(v3);
+    expect(await httpv.query(target, local)).toEqual(advertise(v3));
     const source = "import Imported\n-- local requirements snapshot\n";
     const imported = "-- imported requirement definitions\n";
     await Bun.write(leanPath, source);
@@ -513,7 +692,8 @@ test("file advertisements refresh in place and stale Lean requirement sidecars f
     expect(
       (
         await httpv.checkCompatibility({
-          certificate: v1,
+          operation: "Inventory.POST_reservations",
+          advertisement: advertise(v1, "Inventory.POST_reservations"),
           requirements: leanPath,
           allowedAxioms: inventoryAxioms,
         })
@@ -523,7 +703,8 @@ test("file advertisements refresh in place and stale Lean requirement sidecars f
     expect(
       (
         await httpv.checkCompatibility({
-          certificate: v1,
+          operation: "Inventory.POST_reservations",
+          advertisement: advertise(v1, "Inventory.POST_reservations"),
           requirements: leanPath,
           allowedAxioms: inventoryAxioms,
         })

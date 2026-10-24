@@ -21,6 +21,11 @@ export type Reason =
   | "unavailable"
   | "missing-certificate"
   | "requirements-unavailable"
+  | "invalid-operation-binding"
+  | "invalid-advertisement"
+  | "invalid-options"
+  | "context-unavailable"
+  | "operation-mismatch"
   | "missing-derivation"
   | "invalid-derivation";
 export type MonitorReason =
@@ -33,10 +38,18 @@ export interface VerificationResult
   status: Status;
   reason: Reason | MonitorReason;
   checkedAt?: number;
+  /** Entrypoint currently associated with this endpoint by discovery. */
+  advertisedOperation?: string;
+}
+export interface Advertisement {
+  readonly operation: string;
+  readonly certificate: Certificate;
 }
 export interface CompatibilityOptions extends VerifyOptions {
-  certificate: unknown;
+  advertisement: unknown;
   requirements: Requirements | string;
+  /** Expected endpoint entrypoint in the reviewed local requirement context. */
+  operation: string;
   derivation?: unknown;
   /** Exact comparison is decidable. Semantic checking requires a derivation. */
   mode?: "exact" | "implication";
@@ -51,6 +64,7 @@ export interface QueryOptions {
 export interface WatchOptions extends QueryOptions {
   url: string;
   requirements: Requirements | string;
+  operation: string;
   allowedAxioms?: readonly string[];
   axiomPins?: Readonly<Record<string, string>>;
   interval: number;
@@ -73,7 +87,8 @@ export type Handler = (request: Request) => Response | Promise<Response>;
 export interface ServeOptions {
   routes: Record<
     string,
-    Certificate | string | (() => Certificate | Promise<Certificate>)
+    | { operation: string; certificate: Certificate | string }
+    | (() => Advertisement | Promise<Advertisement>)
   >;
   fetch: Handler;
 }

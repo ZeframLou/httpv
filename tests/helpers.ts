@@ -6,9 +6,17 @@ import {
   statement,
 } from "zklean/encoding";
 import type { Certificate, ProofBackend, Requirements } from "zklean";
+import type { Advertisement } from "../src/types.ts";
 import { inventoryAxioms } from "../examples/inventory.ts";
 
 export { inventoryAxioms };
+
+export function advertise(
+  certificate: Certificate,
+  operation = "Inventory.POST_reservations",
+): Advertisement {
+  return { operation, certificate };
+}
 
 /** Transport and policy tests sign frozen statements previously checked by Nanoda.
  * This test-only backend never substitutes for the SP1 verifier in production. */

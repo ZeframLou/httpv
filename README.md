@@ -17,7 +17,7 @@ providers, or revise its assumptions.
 ## How it works
 
 An API's guarantees are expressed as mathematical statements in
-[Lean](https://lean-lang.org/). [ZKLean](https://github.com/ZeframLou/zklean)
+[Lean](https://lean-lang.org/). [ZKLean](https://github.com/ZeframLou/zklean-dist)
 produces a certificate: cryptographic evidence that those statements follow from
 declared assumptions, called axioms.
 
@@ -31,11 +31,13 @@ Clients independently verify advertised guarantees but still trust the server
 to implement them in its deployed code and responses. HTTPV cannot detect a
 server violating its specification while advertising an unchanged certificate,
 and polling can miss changes between checks. Each client chooses its trusted
-verifier, permitted axioms, and policy for failed or inconclusive checks.
+verifier, expected operations, permitted axioms, and failure policy.
 
 ## Get started
 
-Install from npm:
+The npm packages are not published yet. Private reviewers can
+[install prepared tarballs](docs/DEVELOPMENT.md#check-unpublished-packages).
+After publication, install from npm:
 
 ```sh
 npm install httpv
