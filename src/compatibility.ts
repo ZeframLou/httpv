@@ -2,28 +2,29 @@ import { readModel } from "zklean/encoding";
 import { contextMatches, publicContext } from "zklean";
 import type { Certificate, Specs } from "zklean";
 import type { Advertisement } from "./types.ts";
-export { loadRequirements } from "zklean";
 
-/** Bind the expected endpoint entrypoint to the authenticated remote model.
- * Bridges can add lemmas, but cannot supply a missing remote operation. */
-export function operationBinding(
+/** Whether `operation` is the advertised entrypoint and means the same thing
+ * locally and remotely. Bridges cannot supply or redefine an operation. */
+export function operationMatches(
   remote: Advertisement,
   requirements: Specs,
   operation: string,
-): "invalid-operation-binding" | "operation-mismatch" | undefined {
+): boolean {
   const required = publicContext(readModel(requirements), requirements.claims);
-  if (!Object.hasOwn(required.declarations, operation))
-    return "invalid-operation-binding";
-  if (remote.operation !== operation) return "operation-mismatch";
-  const advertised = publicContext(
-    readModel(remote.certificate.specs),
-    remote.certificate.specs.claims,
+  return (
+    remote.operation === operation &&
+    contextMatches(
+      publicContext(
+        readModel(remote.certificate.specs),
+        remote.certificate.specs.claims,
+      ),
+      publicContext(required, [operation]),
+    )
   );
-  if (!contextMatches(advertised, publicContext(required, [operation])))
-    return "operation-mismatch";
 }
 
-/** Match mathematical contexts, ignoring bound-variable display annotations. */
+/** Every required claim is certified with an identical resolved context.
+ * Binder names and annotations are ignored; extra remote claims are allowed. */
 export function exactMatch(remote: Certificate, requirements: Specs): boolean {
   return (
     requirements.claims.every((name) => remote.specs.claims.includes(name)) &&
@@ -34,18 +35,15 @@ export function exactMatch(remote: Certificate, requirements: Specs): boolean {
   );
 }
 
-/** Each assumed remote claim retains its complete authenticated context.
- * Different versions of an operation need distinct names in a bridge. */
-export function validBridge(
+/** A bridge proves the required claims, and every declaration it shares with
+ * the remote model agrees, so it cannot reinterpret a remote name. */
+export function bridgeMatches(
   remote: Certificate,
   requirements: Specs,
   bridge: Certificate,
 ): boolean {
   const model = readModel(bridge.specs);
   const remoteModel = readModel(remote.specs);
-  // Even an independently proved requirement must not reinterpret an operation
-  // that the remote model defines under the same name. Extra remote declarations
-  // are permitted; every declaration shared with the bridge must agree.
   const shared = Object.keys(remoteModel.declarations).filter((name) =>
     Object.hasOwn(model.declarations, name),
   );

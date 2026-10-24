@@ -1,4 +1,4 @@
-export { HTTPV, createHTTPV, DiscoveryError } from "./client.ts";
-export { discoveryHandler, MEDIA_TYPE } from "./server.ts";
-export { DISCOVERY_FORMAT, parseAdvertisement } from "./advertisement.ts";
+export { createHTTPV } from "./client.ts";
+export { serve } from "./server.ts";
+export { DiscoveryError, MEDIA_TYPE } from "./protocol.ts";
 export type * from "./types.ts";

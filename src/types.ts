@@ -1,98 +1,99 @@
 import type {
   Certificate,
   Requirements,
-  VerifyOptions,
+  VerificationResult as CertificateResult,
   VerifierOptions,
-  VerificationResult as CertificateVerificationResult,
 } from "zklean";
-export type {
-  Certificate,
-  Requirements,
-  ProofBackend,
-  VerifyOptions,
-} from "zklean";
+export type { Certificate, ProofBackend, Requirements } from "zklean";
 
-export type Status = CertificateVerificationResult["status"] | "incompatible";
+export type Status = "verified" | "incompatible" | "unknown";
 export type Reason =
-  | CertificateVerificationResult["reason"]
+  // verified
   | "exact-match"
-  | "derivation"
+  | "bridge"
+  // incompatible
+  | "operation-mismatch"
   | "requirements-not-met"
+  // unknown: certificate checks, discovery, local configuration, monitoring
+  | Exclude<CertificateResult["reason"], "valid">
   | "unavailable"
   | "missing-certificate"
-  | "requirements-unavailable"
-  | "invalid-operation-binding"
   | "invalid-advertisement"
-  | "invalid-options"
-  | "context-unavailable"
-  | "operation-mismatch"
-  | "missing-derivation"
-  | "invalid-derivation";
-export type MonitorReason =
-  | "expired"
-  | "stopped"
+  | "invalid-requirements"
+  | "invalid-bridge"
   | "timeout"
-  | "callback-error";
-export interface VerificationResult
-  extends Omit<CertificateVerificationResult, "status" | "reason"> {
+  | "expired"
+  | "stopped";
+
+export interface Result {
   status: Status;
-  reason: Reason | MonitorReason;
-  checkedAt?: number;
-  /** Entrypoint currently associated with this endpoint by discovery. */
+  reason: Reason;
+  detail?: string;
+  certificateId?: string;
+  modelId?: string;
+  /** Entrypoint the server advertised for this endpoint. */
   advertisedOperation?: string;
+  /** Set by monitors. */
+  checkedAt?: number;
 }
+
 export interface Advertisement {
   readonly operation: string;
   readonly certificate: Certificate;
 }
-export interface CompatibilityOptions extends VerifyOptions {
-  advertisement: unknown;
-  requirements: Requirements | string;
-  /** Expected endpoint entrypoint in the reviewed local requirement context. */
+
+/** What a client's correctness proof assumes about one remote operation. */
+export interface Requirement {
+  /** Expected entrypoint; it must occur in the requirement claims' context. */
   operation: string;
-  derivation?: unknown;
-  /** Exact comparison is decidable. Semantic checking requires a derivation. */
-  mode?: "exact" | "implication";
+  /** A requirements snapshot, its JSON path, or a `.lean` path with a sidecar. */
+  requirements: Requirements | string;
+  allowedAxioms: readonly string[];
+  axiomPins?: Readonly<Record<string, string>>;
+  /** Certificate proving the requirements from the remote claims. */
+  bridge?: Certificate;
 }
+
 export interface QueryOptions {
   method: string;
-  signal?: AbortSignal;
-  timeout?: number;
   /** HTTP is accepted only when explicitly enabled for local development. */
   allowInsecureHttp?: boolean;
+  signal?: AbortSignal | undefined;
 }
-export interface WatchOptions extends QueryOptions {
+
+export interface Dependency extends Requirement, Omit<QueryOptions, "signal"> {
   url: string;
-  requirements: Requirements | string;
-  operation: string;
-  allowedAxioms?: readonly string[];
-  axiomPins?: Readonly<Record<string, string>>;
+}
+
+export interface WatchOptions {
   interval: number;
-  /** Maximum age of an accepted check; defaults to interval + timeout. */
+  /** Bound on one check, including verification. Default 10 s. */
+  timeout?: number;
+  /** Age after which a verified result stops gating requests. Default interval + timeout. */
   maxAge?: number;
-  derivation?: unknown;
-  mode?: "exact" | "implication";
-  /** Synchronous state notification. Await async side effects outside this hook. */
-  onChange?(result: VerificationResult): undefined;
-  onError?(error: unknown): void | Promise<void>;
+  /** Called on the first result and whenever status, reason or identity changes. */
+  onChange?(result: Result): void;
+  signal?: AbortSignal;
 }
+
 export interface Monitor {
+  refresh(): Promise<Result>;
   stop(): void;
-  refresh(): Promise<VerificationResult>;
-  readonly current: VerificationResult | undefined;
-  /** Throw unless the monitor currently has a fresh verified result. */
-  requireVerified(): VerificationResult;
+  readonly current: Result | undefined;
+  /** Throw unless the latest result is verified and younger than `maxAge`. */
+  requireVerified(): Result;
 }
-export type Handler = (request: Request) => Response | Promise<Response>;
-export interface ServeOptions {
-  routes: Record<
-    string,
-    | { operation: string; certificate: Certificate | string }
-    | (() => Advertisement | Promise<Advertisement>)
-  >;
-  fetch: Handler;
-}
+
 export interface ClientOptions extends VerifierOptions {
-  fetch?: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
+  fetch?: (input: URL, init: RequestInit) => Promise<Response>;
   maxResponseBytes?: number;
+}
+
+export type Handler = (request: Request) => Response | Promise<Response>;
+export type Source =
+  | Advertisement
+  | (() => Advertisement | Promise<Advertisement>);
+export interface ServeOptions {
+  routes: Record<string, Source>;
+  fetch: Handler;
 }

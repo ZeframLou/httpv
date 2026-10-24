@@ -1,500 +1,296 @@
+import { MAX_CERTIFICATE_BYTES, readModel } from "zklean/encoding";
 import {
-  Cache,
-  MAX_CERTIFICATE_BYTES,
-  canonical,
-  modelId,
-  object,
-  parseCertificate,
-} from "zklean/encoding";
-import { createVerifier, declarationIdentity } from "zklean";
-import { readModel } from "zklean/encoding";
-import {
-  exactMatch,
+  createVerifier,
+  declarationIdentity,
   loadRequirements,
-  operationBinding,
-  validBridge,
+  publicContext,
+} from "zklean";
+import type { Specs } from "zklean";
+import {
+  bridgeMatches,
+  exactMatch,
+  operationMatches,
 } from "./compatibility.ts";
-import { discoveryHandler, MEDIA_TYPE, methodName } from "./server.ts";
-import { DISCOVERY_FORMAT, parseAdvertisement } from "./advertisement.ts";
+import {
+  DiscoveryError,
+  MEDIA_TYPE,
+  methodName,
+  parseDiscovery,
+} from "./protocol.ts";
 import type {
-  Certificate,
   Advertisement,
   ClientOptions,
-  CompatibilityOptions,
+  Dependency,
   Monitor,
   QueryOptions,
-  ServeOptions,
-  VerificationResult,
+  Reason,
+  Requirement,
+  Result,
   WatchOptions,
 } from "./types.ts";
 
-export class DiscoveryError extends Error {
-  constructor(
-    readonly reason:
-      | "unavailable"
-      | "missing-certificate"
-      | "invalid-advertisement",
-    message: string,
+async function readText(response: Response, limit: number): Promise<string> {
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  const reader = response.body?.getReader();
+  for (
+    let next = await reader?.read();
+    next && !next.done;
+    next = await reader!.read()
   ) {
-    super(message);
+    size += next.value.byteLength;
+    if (size > limit) {
+      await reader!.cancel();
+      throw new Error("discovery response too large");
+    }
+    chunks.push(next.value);
   }
+  return new TextDecoder("utf-8", { fatal: true }).decode(
+    Bun.concatArrayBuffers(chunks),
+  );
 }
 
-/** Instances scope all trust configuration and caches to one application. */
+/** Each instance holds one trust configuration: verifier backend and transport. */
 export function createHTTPV(options: ClientOptions = {}) {
-  const transport = options.fetch ?? globalThis.fetch;
+  const transport = options.fetch ?? fetch;
   const { verify } = createVerifier(options);
-  const compatible = new Cache<boolean>(options.cacheSize ?? 128);
   const maxBytes = options.maxResponseBytes ?? MAX_CERTIFICATE_BYTES;
-  if (!Number.isSafeInteger(maxBytes) || maxBytes < 1)
-    throw new Error("invalid response limit");
 
+  /** Fetch the advertisement for one method of a resource. Throws DiscoveryError. */
   async function query(
     url: string,
-    queryOptions: QueryOptions,
+    { method, allowInsecureHttp, signal }: QueryOptions,
   ): Promise<Advertisement> {
     const target = new URL(url);
     if (
       target.protocol !== "https:" &&
-      !(target.protocol === "http:" && queryOptions.allowInsecureHttp)
-    ) {
+      !(allowInsecureHttp && target.protocol === "http:")
+    )
       throw new DiscoveryError(
         "unavailable",
         "HTTPV requires HTTPS (allowInsecureHttp is for development)",
       );
-    }
     if (target.username || target.password || target.hash)
       throw new DiscoveryError("unavailable", "invalid discovery URL");
-    const method = methodName(queryOptions.method);
-    const timeout = queryOptions.timeout ?? 10_000;
-    if (!Number.isSafeInteger(timeout) || timeout < 1 || timeout > 0x7fffffff)
-      throw new Error("invalid timeout");
-    const signal = AbortSignal.any([
-      AbortSignal.timeout(timeout),
-      ...(queryOptions.signal ? [queryOptions.signal] : []),
-    ]);
+    const name = methodName(method);
+    let response: Response;
     try {
-      const response = await transport(target, {
+      response = await transport(target, {
         method: "OPTIONS",
         headers: { Accept: MEDIA_TYPE, "Cache-Control": "no-cache" },
         cache: "no-store",
         redirect: "error",
-        signal,
+        signal: signal ?? AbortSignal.timeout(10_000),
       });
-      if (
-        response.status === 404 ||
-        response.status === 405 ||
-        response.status === 501
-      ) {
-        await response.body?.cancel();
-        throw new DiscoveryError(
-          "missing-certificate",
-          `discovery returned ${response.status}`,
-        );
-      }
-      if (!response.ok) {
-        await response.body?.cancel();
-        throw new DiscoveryError(
-          "unavailable",
-          `discovery returned ${response.status}`,
-        );
-      }
-      if (
-        response.headers
-          .get("content-type")
-          ?.split(";")[0]
-          ?.trim()
-          .toLowerCase() !== MEDIA_TYPE
-      ) {
-        await response.body?.cancel();
-        throw new DiscoveryError(
-          "missing-certificate",
-          "HTTPV media type missing",
-        );
-      }
-      const reader = response.body?.getReader();
-      if (!reader)
-        throw new DiscoveryError(
-          "invalid-advertisement",
-          "empty discovery body",
-        );
-      const chunks: Uint8Array[] = [];
-      let size = 0;
-      try {
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          size += value.byteLength;
-          if (size > maxBytes)
-            throw new DiscoveryError(
-              "invalid-advertisement",
-              "discovery response too large",
-            );
-          chunks.push(value);
-        }
-      } finally {
-        await reader.cancel().catch(() => {});
-      }
-      let body: Record<string, unknown>;
-      try {
-        body = object(
-          JSON.parse(
-            new TextDecoder("utf-8", { fatal: true }).decode(
-              Buffer.concat(chunks),
-            ),
-          ),
-        );
-      } catch {
-        throw new DiscoveryError(
-          "invalid-advertisement",
-          "invalid discovery JSON",
-        );
-      }
-      let contracts: Record<string, unknown>;
-      try {
-        if (
-          body.format !== DISCOVERY_FORMAT ||
-          Object.keys(body).sort().join(",") !== "contracts,format"
-        )
-          throw new Error("unsupported discovery format");
-        contracts = object(body.contracts);
-      } catch {
-        throw new DiscoveryError(
-          "invalid-advertisement",
-          "invalid contracts map or discovery format",
-        );
-      }
-      if (!Object.hasOwn(contracts, method))
-        throw new DiscoveryError(
-          "missing-certificate",
-          `no certificate for ${method}`,
-        );
-      try {
-        return parseAdvertisement(contracts[method]);
-      } catch (error) {
-        throw new DiscoveryError("invalid-advertisement", String(error));
-      }
     } catch (error) {
-      if (error instanceof DiscoveryError) throw error;
       throw new DiscoveryError("unavailable", String(error));
     }
+    const type = response.headers
+      .get("content-type")
+      ?.split(";")[0]!
+      .trim()
+      .toLowerCase();
+    if (!response.ok || type !== MEDIA_TYPE) {
+      await response.body?.cancel();
+      const missing = response.ok || [404, 405, 501].includes(response.status);
+      throw new DiscoveryError(
+        missing ? "missing-certificate" : "unavailable",
+        `discovery returned ${response.status} ${type ?? "without a media type"}`,
+      );
+    }
+    let body: unknown;
+    try {
+      body = JSON.parse(await readText(response, maxBytes));
+    } catch (error) {
+      throw new DiscoveryError("invalid-advertisement", String(error));
+    }
+    return parseDiscovery(body, name);
   }
 
-  async function checkCompatibility(
-    input: CompatibilityOptions,
-  ): Promise<VerificationResult> {
-    if (!input || !Array.isArray(input.allowedAxioms))
-      return { status: "unknown", reason: "invalid-options" };
-    let request: CompatibilityOptions;
-    try {
-      request = {
-        advertisement: input.advertisement,
-        operation: input.operation,
-        requirements: structuredClone(input.requirements),
-        allowedAxioms: [...input.allowedAxioms],
-        ...(input.axiomPins === undefined
-          ? {}
-          : { axiomPins: structuredClone(input.axiomPins) }),
-        ...(input.derivation === undefined
-          ? {}
-          : { derivation: structuredClone(input.derivation) }),
-        ...(input.mode === undefined ? {} : { mode: input.mode }),
-      };
-    } catch (error) {
-      return {
-        status: "unknown",
-        reason: "invalid-options",
-        detail: String(error),
-      };
-    }
-    try {
-      return await evaluateCompatibility(request);
-    } catch (error) {
-      return {
-        status: "unknown",
-        reason: "context-unavailable",
-        detail: String(error),
-      };
-    }
-  }
-
-  async function evaluateCompatibility(
-    input: CompatibilityOptions,
-  ): Promise<VerificationResult> {
-    if (typeof input.operation !== "string" || !input.operation)
-      return { status: "unknown", reason: "invalid-operation-binding" };
-    if (
-      input.mode !== undefined &&
-      !["exact", "implication"].includes(input.mode)
-    )
-      return { status: "unknown", reason: "invalid-options" };
-    const operation = input.operation;
-    let advertisement: Advertisement;
-    try {
-      advertisement = parseAdvertisement(input.advertisement);
-    } catch (error) {
-      return {
-        status: "unknown",
-        reason: "invalid-advertisement",
-        detail: String(error),
-      };
-    }
-    const certificate = advertisement.certificate;
-    const result = {
-      ...(await verify(certificate, input)),
-      advertisedOperation: advertisement.operation,
-    };
-    if (result.status !== "verified") return result;
-    let requirements;
-    try {
-      requirements = await loadRequirements(input.requirements);
-    } catch (error) {
-      return {
-        ...result,
-        status: "unknown",
-        reason: "requirements-unavailable",
-        detail: String(error),
-      };
-    }
-    const bindingError = operationBinding(
-      advertisement,
-      requirements.specs,
-      operation,
+  /** Decide whether an advertisement establishes a requirement. */
+  async function compare(
+    advertisement: Advertisement,
+    requirement: Requirement,
+  ): Promise<Result> {
+    const { certificate } = advertisement;
+    const { status, reason, ...identity } = await verify(
+      certificate,
+      requirement,
     );
-    if (bindingError)
+    const base = { ...identity, advertisedOperation: advertisement.operation };
+    if (status !== "verified")
+      return { ...base, status, reason: reason as Reason };
+
+    let specs: Specs;
+    try {
+      specs = (await loadRequirements(requirement.requirements)).specs;
+      const context = publicContext(readModel(specs), specs.claims);
+      if (!Object.hasOwn(context.declarations, requirement.operation))
+        throw new Error(
+          `${requirement.operation} is outside the requirement claims' context`,
+        );
+    } catch (error) {
       return {
-        ...result,
-        status:
-          input.mode === "exact" && bindingError === "operation-mismatch"
-            ? "incompatible"
-            : "unknown",
-        reason: bindingError,
+        ...base,
+        status: "unknown",
+        reason: "invalid-requirements",
+        detail: String(error),
       };
-    const key = canonical({
-      remote: result.modelId,
-      required: modelId(requirements.specs),
-      operation,
-      advertisedOperation: advertisement.operation,
-    });
-    if (compatible.get(key) || exactMatch(certificate, requirements.specs)) {
-      compatible.set(key, true);
-      return { ...result, reason: "exact-match" };
     }
-    if (input.mode === "exact")
+    if (!operationMatches(advertisement, specs, requirement.operation))
+      return { ...base, status: "incompatible", reason: "operation-mismatch" };
+    if (exactMatch(certificate, specs))
+      return { ...base, status: "verified", reason: "exact-match" };
+    if (!requirement.bridge)
       return {
-        ...result,
+        ...base,
         status: "incompatible",
         reason: "requirements-not-met",
       };
-    if (input.derivation === undefined) {
-      return { ...result, status: "unknown", reason: "missing-derivation" };
-    }
-    // A derivation may assume only client-permitted axioms and guarantees that
-    // were independently authenticated in the remote certificate above.
-    let bridge: Certificate;
-    try {
-      bridge = parseCertificate(input.derivation);
-    } catch {
-      return { ...result, status: "unknown", reason: "invalid-derivation" };
-    }
+
+    // The bridge may assume the remote claims just verified, pinned to their
+    // exact remote meaning, plus axioms the client permits.
+    const { claims } = certificate.specs;
     const remoteModel = readModel(certificate.specs);
-    const bridgeResult = await verify(bridge, {
-      allowedAxioms: [...input.allowedAxioms, ...certificate.specs.claims],
+    const bridged = await verify(requirement.bridge, {
+      allowedAxioms: [...requirement.allowedAxioms, ...claims],
       axiomPins: {
-        ...input.axiomPins,
+        ...requirement.axiomPins,
         ...Object.fromEntries(
-          certificate.specs.claims.map((name) => [
-            name,
-            declarationIdentity(remoteModel, name),
-          ]),
+          claims.map((name) => [name, declarationIdentity(remoteModel, name)]),
         ),
       },
     });
-    if (bridgeResult.status !== "verified")
-      return { ...result, status: "unknown", reason: "invalid-derivation" };
-    if (!validBridge(certificate, requirements.specs, bridge))
-      return { ...result, status: "unknown", reason: "invalid-derivation" };
-    // The certificate cache avoids repeated cryptography. The inexpensive context
-    // comparison is repeated to keep derivation and axiom policies independent.
-    return { ...result, reason: "derivation" };
+    if (
+      bridged.status !== "verified" ||
+      !bridgeMatches(certificate, specs, requirement.bridge)
+    )
+      return {
+        ...base,
+        status: "unknown",
+        reason: "invalid-bridge",
+        detail: bridged.detail ?? bridged.reason,
+      };
+    return { ...base, status: "verified", reason: "bridge" };
   }
 
-  function watch(input: WatchOptions): Monitor {
-    const timeout = input.timeout ?? 10_000;
-    const maxAge = input.maxAge ?? input.interval + timeout;
-    for (const [name, value] of Object.entries({
-      interval: input.interval,
-      timeout,
-      maxAge,
-    }))
-      if (!Number.isSafeInteger(value) || value < 1 || value > 0x7fffffff)
-        throw new Error(`invalid ${name}`);
-    const options = {
-      ...input,
-      requirements:
-        typeof input.requirements === "string"
-          ? input.requirements
-          : structuredClone(input.requirements),
-      allowedAxioms: [...(input.allowedAxioms ?? [])],
-      axiomPins: { ...input.axiomPins },
-      ...(input.derivation === undefined
-        ? {}
-        : { derivation: structuredClone(input.derivation) }),
-    };
-    const controller = new AbortController();
-    const signal = AbortSignal.any([
-      controller.signal,
-      ...(input.signal ? [input.signal] : []),
-    ]);
-    let current: VerificationResult | undefined;
-    let inflight: Promise<VerificationResult> | undefined;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    let expiry: ReturnType<typeof setTimeout> | undefined;
-    let stopped = signal.aborted;
-    let lastEvent: string | undefined;
+  /** Query and compare. Never throws; failures are `unknown` results. */
+  async function check(
+    dependency: Dependency,
+    signal?: AbortSignal,
+  ): Promise<Result> {
+    try {
+      return await compare(
+        await query(dependency.url, { ...dependency, signal }),
+        dependency,
+      );
+    } catch (error) {
+      const reason =
+        error instanceof DiscoveryError ? error.reason : "unavailable";
+      return { status: "unknown", reason, detail: String(error) };
+    }
+  }
 
-    const onError = (error: unknown) => {
-      try {
-        void Promise.resolve(options.onError?.(error)).catch(() => {});
-      } catch {
-        /* Diagnostics cannot interrupt monitoring. */
-      }
-    };
-    const publish = (result: VerificationResult): void => {
-      if (stopped) return;
-      if (expiry) clearTimeout(expiry);
-      current = { ...result, checkedAt: Date.now() };
-      if (current.status === "verified")
-        expiry = setTimeout(
-          () => publish({ status: "unknown", reason: "expired" }),
-          maxAge,
-        );
-      const event = canonical({
-        status: result.status,
-        reason: result.reason,
-        certificateId: result.certificateId ?? null,
-        modelId: result.modelId ?? null,
-        advertisedOperation: result.advertisedOperation ?? null,
-      });
-      if (event === lastEvent) return;
-      lastEvent = event;
-      try {
-        const returned: unknown = options.onChange?.(structuredClone(current));
-        if (
-          returned &&
-          typeof (returned as PromiseLike<unknown>).then === "function"
-        ) {
-          void Promise.resolve(returned).catch(onError);
-          current = {
-            status: "unknown",
-            reason: "callback-error",
-            checkedAt: Date.now(),
-          };
-          stop(false);
-          onError(
-            new Error(
-              "onChange must be synchronous; gate requests with requireVerified()",
+  /** Recheck a dependency every `interval`. Gate dependent requests with requireVerified(). */
+  function watch(dependency: Dependency, settings: WatchOptions): Monitor {
+    const { interval, timeout = 10_000, onChange } = settings;
+    const maxAge = settings.maxAge ?? interval + timeout;
+    for (const [name, value] of Object.entries({ interval, timeout, maxAge }))
+      if (!(value > 0 && value <= 0x7fffffff))
+        throw new RangeError(`invalid ${name}`);
+    const stopper = new AbortController();
+    const stopped = (): Result => ({ status: "unknown", reason: "stopped" });
+    let latest: Result | undefined;
+    let inflight: Promise<Result> | undefined;
+    let timer: Timer | undefined;
+    let notified: string | undefined;
+
+    // Verification cannot be cancelled, so a deadline settles the cycle instead
+    // and any late result is discarded.
+    const cycle = (): Promise<Result> => {
+      const deadline = AbortSignal.any([
+        stopper.signal,
+        AbortSignal.timeout(timeout),
+      ]);
+      const aborted = new Promise<Result>((resolve) =>
+        deadline.addEventListener(
+          "abort",
+          () =>
+            resolve(
+              stopper.signal.aborted
+                ? stopped()
+                : { status: "unknown", reason: "timeout" },
             ),
-          );
-        }
+          { once: true },
+        ),
+      );
+      return Promise.race([check(dependency, deadline), aborted]);
+    };
+
+    const notify = (result: Result): void => {
+      const { status, reason, certificateId, modelId, advertisedOperation } =
+        result;
+      const key = JSON.stringify([
+        status,
+        reason,
+        certificateId,
+        modelId,
+        advertisedOperation,
+      ]);
+      if (key === notified) return;
+      notified = key;
+      try {
+        onChange?.({ ...result });
       } catch (error) {
-        onError(error);
+        reportError(error);
       }
     };
-    const stop = (invalidate = true): void => {
-      if (stopped) return;
-      stopped = true;
-      if (timer) clearTimeout(timer);
-      if (expiry) clearTimeout(expiry);
-      if (invalidate)
-        current = {
-          status: "unknown",
-          reason: "stopped",
-          checkedAt: Date.now(),
-        };
-      controller.abort();
-    };
-    const refresh = (): Promise<VerificationResult> => {
-      if (stopped)
-        return Promise.resolve(
-          current ?? { status: "unknown", reason: "stopped" },
-        );
-      if (inflight) return inflight;
-      if (timer) clearTimeout(timer);
-      inflight = (async () => {
-        const deadline = new AbortController();
-        const cycleSignal = AbortSignal.any([signal, deadline.signal]);
-        const expires = Date.now() + timeout;
-        const watchdog = setTimeout(() => deadline.abort(), timeout);
-        let abort!: () => void;
-        const interrupted = new Promise<never>((_, reject) => {
-          abort = () =>
-            reject(new Error(signal.aborted ? "stopped" : "timeout"));
-          cycleSignal.addEventListener("abort", abort, { once: true });
-          if (cycleSignal.aborted) abort();
-        });
-        let result: VerificationResult;
-        try {
-          result = await Promise.race([
-            (async () => {
-              const advertisement = await query(options.url, {
-                ...options,
-                signal: cycleSignal,
-              });
-              return checkCompatibility({ ...options, advertisement });
-            })(),
-            interrupted,
-          ]);
-          if (Date.now() >= expires)
-            result = { status: "unknown", reason: "timeout" };
-        } catch (error) {
-          result = {
-            status: "unknown",
-            reason: cycleSignal.aborted
-              ? signal.aborted
-                ? "stopped"
-                : "timeout"
-              : error instanceof DiscoveryError
-                ? error.reason
-                : "unavailable",
-            detail: String(error),
-          };
-        } finally {
-          clearTimeout(watchdog);
-          cycleSignal.removeEventListener("abort", abort);
-        }
-        if (!stopped) publish(result);
-        return structuredClone(current ?? result);
-      })().finally(() => {
+
+    const refresh = (): Promise<Result> => {
+      if (stopper.signal.aborted) return Promise.resolve(stopped());
+      inflight ??= cycle().then((result) => {
         inflight = undefined;
-        if (!stopped)
-          timer = setTimeout(() => {
-            void refresh();
-          }, options.interval);
+        if (stopper.signal.aborted) return stopped();
+        latest = { ...result, checkedAt: Date.now() };
+        clearTimeout(timer);
+        timer = setTimeout(refresh, interval);
+        notify(latest);
+        return { ...latest };
       });
       return inflight;
     };
-    signal.addEventListener("abort", () => stop(), { once: true });
-    queueMicrotask(() => {
-      if (!stopped) void refresh();
-    });
-    const latest = (): VerificationResult | undefined => {
+
+    const current = (): Result | undefined => {
+      if (stopper.signal.aborted) return stopped();
       if (
-        current?.status === "verified" &&
-        Date.now() - current.checkedAt! >= maxAge
+        latest?.status === "verified" &&
+        Date.now() - latest.checkedAt! >= maxAge
       )
-        publish({ status: "unknown", reason: "expired" });
-      return current && structuredClone(current);
+        return {
+          status: "unknown",
+          reason: "expired",
+          checkedAt: latest.checkedAt!,
+        };
+      return latest && { ...latest };
     };
+
+    const stop = (): void => {
+      stopper.abort();
+      clearTimeout(timer);
+    };
+    settings.signal?.addEventListener("abort", stop, { once: true });
+    if (settings.signal?.aborted) stop();
+    void refresh();
+
     return {
-      stop: () => stop(),
       refresh,
+      stop,
       get current() {
-        return latest();
+        return current();
       },
       requireVerified() {
-        const result = latest();
-        if (stopped || result?.status !== "verified")
+        const result = current();
+        if (result?.status !== "verified")
           throw new Error(
             `HTTPV dependency is not verified: ${result?.reason ?? "unchecked"}`,
           );
@@ -503,12 +299,5 @@ export function createHTTPV(options: ClientOptions = {}) {
     };
   }
 
-  return {
-    query,
-    verify,
-    checkCompatibility,
-    watch,
-    serve: (input: ServeOptions) => ({ fetch: discoveryHandler(input) }),
-  };
+  return { query, compare, check, watch };
 }
-export const HTTPV = createHTTPV();

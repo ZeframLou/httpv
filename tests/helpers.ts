@@ -6,27 +6,27 @@ import {
   statement,
 } from "zklean/encoding";
 import type { Certificate, ProofBackend, Requirements } from "zklean";
-import type { Advertisement } from "../src/types.ts";
-import { inventoryAxioms } from "../examples/inventory.ts";
+import { serve } from "../src/index.ts";
+import type { Advertisement, Source } from "../src/index.ts";
 
-export { inventoryAxioms };
+/** Lean's arithmetic lemmas use propositional extensionality. */
+export const inventoryAxioms = ["propext"];
+export const operation = "Inventory.POST_reservations";
 
 export function advertise(
   certificate: Certificate,
-  operation = "Inventory.POST_reservations",
+  name = operation,
 ): Advertisement {
-  return { operation, certificate };
+  return { operation: name, certificate };
 }
 
-/** Transport and policy tests sign frozen statements previously checked by Nanoda.
- * This test-only backend never substitutes for the SP1 verifier in production. */
+/** Signs frozen statements already checked by the Lean kernel, so policy tests
+ * run without SP1. Production uses ZKLean's pinned Groth16 verifier. */
 export function testAuthority() {
   const { privateKey, publicKey } = generateKeyPairSync("ed25519");
-  let calls = 0;
   const backend: ProofBackend = {
     identity: `test:${publicKey.export({ type: "spki", format: "der" }).toString("hex")}`,
     async verify(certificate) {
-      calls++;
       return verify(
         null,
         Buffer.from(canonical(statement(certificate))),
@@ -37,27 +37,12 @@ export function testAuthority() {
   };
   return {
     backend,
-    get calls() {
-      return calls;
-    },
-    async issue(
-      module: string,
-      claims?: string[],
-      allowedAxioms = inventoryAxioms,
-    ): Promise<Certificate> {
+    async issue(fixture: string): Promise<Certificate> {
       const value = await Bun.file(
-        new URL(`./fixtures/${module}.statement.json`, import.meta.url),
+        new URL(`./fixtures/${fixture}.statement.json`, import.meta.url),
       ).json();
-      const certificate = parseCertificate({ ...value, proof: "base64:AA==" });
-      if (
-        claims &&
-        canonical([...claims].sort()) !== canonical(certificate.specs.claims)
-      )
-        throw new Error("fixture claims differ from the requested claims");
-      if (certificate.axioms.some((axiom) => !allowedAxioms.includes(axiom)))
-        throw new Error("fixture requires an unpermitted axiom");
       return {
-        ...certificate,
+        ...parseCertificate({ ...value, proof: "base64:AA==" }),
         proof: encodeBase64(
           sign(null, Buffer.from(canonical(value)), privateKey),
         ),
@@ -70,4 +55,24 @@ export async function requirements(): Promise<Requirements> {
   return Bun.file(
     new URL("./fixtures/requirements.json", import.meta.url),
   ).json();
+}
+
+export function snapshot(certificate: Certificate): Requirements {
+  return { format: "zklean/requirements/1", specs: certificate.specs };
+}
+
+/** Serve one route on a random local port. */
+export function listen(
+  source: Source,
+  fetch = (request: Request) => Response.json({ method: request.method }),
+) {
+  const server = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    ...serve({ routes: { "POST /reservations": source }, fetch }),
+  });
+  return {
+    url: `http://127.0.0.1:${server.port}/reservations`,
+    [Symbol.dispose]: () => server.stop(true),
+  };
 }
