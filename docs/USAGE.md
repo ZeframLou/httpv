@@ -26,8 +26,11 @@ Generate the API's certificate with [ZKLean](https://github.com/ZeframLou/zklean
 before deployment. A certificate is a few hundred bytes: the names of the
 proved claims, the definitions they are about, and the axioms they use, each
 with an **identity** (a hash of the declaration and everything it refers to),
-plus a 260-byte proof. Publish the Lean sources too, so clients can review what
-the identities mean.
+plus a 260-byte proof. It also records its **source**: the URL of the Lean
+export it was proved from, which `zklean prove` writes beside the certificate.
+Publish that file so clients can review what the identities mean. To keep
+proofs private, prove from a module that states the claims as axioms; the
+identities are the same.
 
 Wrap your existing Fetch handler:
 
@@ -100,8 +103,17 @@ and the definitions they are about, by name and identity:
 }
 ```
 
-Generate them from Lean source you have reviewed, either the API's published
-sources or your own statements of what you need, and commit the file:
+Generate them from Lean code you have reviewed. To get the API's code, fetch
+its certificate's source; ZKLean checks the export and fails unless every
+identity matches the certificate, so a wrong pointer cannot mislead you, and it
+never runs what it downloads:
+
+```sh
+zklean fetch --certificate approved.json --out vendor/inventory.ndjson
+```
+
+Then write requirements from that code, or from your own statements of what
+you need, and commit the file:
 
 ```sh
 zklean requirements --claims Inventory.reservation_safe \

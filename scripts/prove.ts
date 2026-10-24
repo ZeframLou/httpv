@@ -1,4 +1,5 @@
-/** Regenerate the example's certificates and requirements. Proofs take a long time. */
+/** Regenerate the example's requirements, bridge policy and certificates.
+ * Each proof takes hours and writes the certificate and its source export. */
 import {
   axiomFlags,
   bridgePolicy,
@@ -6,6 +7,7 @@ import {
   expectedBridgePolicy,
   requirements,
   source,
+  sourceURL,
 } from "./models.ts";
 import { runZKLean } from "./zklean.ts";
 
@@ -26,6 +28,7 @@ for (const model of certificates) {
     "prove",
     ...source(model),
     ...axiomFlags(model),
+    ...["--source", sourceURL(model.out)],
     ...(timeout ? ["--timeout", timeout] : []),
     "--out",
     model.out,

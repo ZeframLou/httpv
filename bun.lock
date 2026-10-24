@@ -8,7 +8,7 @@
         "@types/bun": "1.3.11",
         "prettier": "3.6.2",
         "typescript": "5.9.3",
-        "zklean": "git+https://git@github.com/ZeframLou/zklean.git#9b5d009b7d447ac15db6711c29fe9d646d2dbedf",
+        "zklean": "git+https://git@github.com/ZeframLou/zklean.git#cda0843a407186cdbdb5275207f774c8a5e96e3c",
       },
       "peerDependencies": {
         "zklean": "0.1.0",
@@ -28,6 +28,6 @@
 
     "undici-types": ["undici-types@8.9.0", "", {}, "sha512-KTDyRTYX8sWmKXAikPHHSyc63CRPETMctyjKFupcC6OBLXT3xsN0e9aF7m+mIXutFWpUXuedtowG7iLOzp0kQg=="],
 
-    "zklean": ["zklean@git+https://git@github.com/ZeframLou/zklean.git#9b5d009b7d447ac15db6711c29fe9d646d2dbedf", {}, "9b5d009b7d447ac15db6711c29fe9d646d2dbedf"],
+    "zklean": ["zklean@git+https://git@github.com/ZeframLou/zklean.git#cda0843a407186cdbdb5275207f774c8a5e96e3c", {}, "cda0843a407186cdbdb5275207f774c8a5e96e3c"],
   }
 }

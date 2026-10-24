@@ -1,5 +1,6 @@
 import { createHash, generateKeyPairSync, sign, verify } from "node:crypto";
 import { canonical, encodeBase64 } from "zklean/encoding";
+import { standardAxioms } from "zklean";
 import type { Certificate, ProofBackend, Requirements } from "zklean";
 import { serve } from "../src/index.ts";
 import type { Advertisement, Source } from "../src/index.ts";
@@ -9,9 +10,9 @@ export const id = (label: string) =>
   createHash("sha256").update(label).digest("hex");
 
 export const operation = "Inventory.POST_reservations";
-export const axioms = { propext: id("propext") };
+export const axioms = { propext: standardAxioms.propext! };
 
-type Statement = Omit<Certificate, "format" | "proof">;
+type Statement = Omit<Certificate, "format" | "proof" | "source">;
 const statement = ({ format, claims, definitions, axioms }: Certificate) =>
   canonical({ format, claims, definitions, axioms });
 
@@ -40,6 +41,7 @@ export function testAuthority() {
       claims,
       definitions,
       axioms,
+      source: "https://example.test/inventory.ndjson",
       proof: "",
     };
     return {

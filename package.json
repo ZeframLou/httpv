@@ -27,7 +27,7 @@
     "@types/bun": "1.3.11",
     "prettier": "3.6.2",
     "typescript": "5.9.3",
-    "zklean": "git+https://git@github.com/ZeframLou/zklean.git#9b5d009b7d447ac15db6711c29fe9d646d2dbedf"
+    "zklean": "git+https://git@github.com/ZeframLou/zklean.git#cda0843a407186cdbdb5275207f774c8a5e96e3c"
   },
   "engines": {
     "bun": ">=1.4.4"

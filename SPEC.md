@@ -21,7 +21,8 @@ The key words MUST, MUST NOT, SHOULD, and MAY follow RFC 2119 and RFC 8174.
   to, binding every constant name and its content. A proposition's identity
   covers its statement, not its proof.
 - **Certificate:** the identities of the claims it proves, the definitions
-  they are about, and the axioms the proofs use, plus a succinct proof.
+  they are about, and the axioms the proofs use, plus a succinct proof and an
+  unproved pointer to their Lean source.
 - **Operation:** the Lean definition of an endpoint's behavior.
 - **Advertisement:** an operation name and a certificate for one HTTP method of
   one resource.
@@ -70,6 +71,7 @@ Vary: Accept
         "claims": { "Inventory.reservation_safe": "56b0…" },
         "definitions": { "Inventory.POST_reservations": "9f2c…" },
         "axioms": { "propext": "b75a…" },
+        "source": "https://example.com/inventory.ndjson",
         "proof": "base64:..."
       }
     }
@@ -80,6 +82,11 @@ Vary: Accept
 The envelope and each advertisement are closed objects: they MUST contain
 exactly the fields shown, and clients MUST reject anything else. Extensions
 require a new `format`. `contracts` maps HTTP methods to advertisements.
+
+`source` is the URL of a Lean export containing every named declaration. It is
+not part of the proved statement. Clients MUST NOT rely on it except to obtain
+Lean declarations, and MUST discard any that do not reproduce the certified
+identities.
 
 `operation` MUST be nonempty and MUST be one of the certificate's
 `definitions`, which ZKLean only admits when the claims depend on them. The

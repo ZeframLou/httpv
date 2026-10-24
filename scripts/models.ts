@@ -11,6 +11,12 @@ const operation = "UnitInventory.POST_units";
 /** The bridge assumes V1's claim; this file pins it to V1's identity. */
 export const bridgePolicy = `${project}/axioms.json`;
 
+/** Each certificate's source: the export that `prove` writes beside it. ZKLean
+ * re-verifies every identity, so the URL may follow main. */
+export const exportFile = (out: string) => out.replace(/\.json$/, ".ndjson");
+export const sourceURL = (out: string) =>
+  `https://raw.githubusercontent.com/ZeframLou/httpv/main/${exportFile(out)}`;
+
 export interface Model {
   module: string;
   claims: string[];

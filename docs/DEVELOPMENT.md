@@ -39,8 +39,12 @@ These steps need the [ZKLean CLI](https://github.com/ZeframLou/zklean); set
 bun run check:certificates  # every artifact matches its re-checked source
 ```
 
-`bun run prove` regenerates the requirements, the bridge's axiom policy and
-the certificates in place; review the diff before committing. Prove with
+The repository is private, so the check verifies each committed export instead
+of downloading the certificate's source URL.
+
+`bun run prove` regenerates the requirements, the bridge's axiom policy, and
+each certificate with the Lean export it was proved from, which the
+certificate names as its source. Review the diff before committing. Prove with
 ZKLean's released guest so the certificates verify under the SDK's pinned key:
 set `ZKLEAN_GUEST_ELF` to the guest program and `ZKLEAN_PROFILE` to its verifier
 profile, and the prover refuses to run if they disagree. The native prover
