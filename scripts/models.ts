@@ -64,12 +64,6 @@ export const models: Model[] = [
     ["Client.stock_conserved"],
     ["propext"],
   ),
-  fixture(
-    "Axioms",
-    "axioms",
-    ["Inventory.assumed_safe"],
-    ["Trusted.evidence", "Trusted.stock_policy"],
-  ),
   fixture("ChangedDefinition", "changed-definition", [
     "Inventory.reservation_safe",
   ]),

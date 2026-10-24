@@ -30,8 +30,8 @@ Certificate generation happens separately from serving and checking requests.
 Clients independently verify advertised guarantees but still trust the server
 to implement them in its deployed code and responses. HTTPV cannot detect a
 server violating its specification while advertising an unchanged certificate,
-and polling can miss changes between checks. Each client chooses its trusted
-verifier, expected operations, permitted axioms, and failure policy.
+and polling can miss changes between checks. Each client chooses its own
+verifier, requirements, permitted axioms, and failure policy.
 
 ## Get started
 
@@ -43,9 +43,29 @@ After publication, install from npm:
 npm install httpv
 ```
 
-Run with [Bun](https://bun.sh/) 1.4.4 or newer. Follow the
-[usage guide](docs/USAGE.md) to publish a certificate, check an API, and monitor
-updates.
+Run with [Bun](https://bun.sh/) 1.4.4 or newer. A client describes the
+endpoint it depends on and gates requests on the latest check:
 
-[Protocol specification](SPEC.md) · [Compatibility rules](docs/ENCODING.md) ·
-[Development](docs/DEVELOPMENT.md)
+```ts
+import { createHTTPV } from "httpv";
+
+const monitor = createHTTPV().watch(
+  {
+    url: "https://inventory.example.com/reservations",
+    method: "POST",
+    operation: "Inventory.POST_reservations",
+    requirements: "./specs/requirements.json",
+    allowedAxioms: ["propext"],
+  },
+  { interval: 60_000 },
+);
+
+await monitor.refresh();
+monitor.requireVerified(); // throws unless the current contract still holds
+```
+
+[`examples/upgrades.ts`](examples/upgrades.ts) runs the whole workflow with
+real certificates: `bun run example`. The [usage guide](docs/USAGE.md) covers
+serving certificates, choosing requirements, bridges, and monitoring.
+
+[Protocol specification](SPEC.md) · [Development](docs/DEVELOPMENT.md)
