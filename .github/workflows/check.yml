@@ -90,5 +90,5 @@ jobs:
           export ZKLEAN_EXPORTER="$PWD/.tooling/zklean/.tooling/lean4export/.lake/build/bin/lean4export"
           export ZKLEAN_LAKE="$(command -v lake)"
           bun run fixtures
-          git diff --exit-code -- tests/fixtures examples/unit-inventory/certificates
+          git diff --exit-code -- tests/fixtures examples/inventory/certificates
           bun scripts/check-certificates.ts

@@ -1,37 +1,38 @@
-/** Regenerate public model test vectors with the real Lean checker. */
+/** Re-check every Lean model with the installed ZKLean CLI and rewrite its public model. */
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { examples } from "./models.ts";
+import { models } from "./models.ts";
 import { runZKLean } from "./zklean.ts";
 
 const temporary = await mkdtemp(join(tmpdir(), "httpv-fixtures-"));
 try {
-  for (const example of examples) {
-    const exported = join(temporary, `${example.file}.ndjson`);
+  for (const [index, model] of models.entries()) {
+    const exported = join(temporary, `${index}.ndjson`);
+    const claims = model.claims.join(",");
     await runZKLean([
       "export",
       "--project",
-      example.project,
+      model.project,
       "--module",
-      example.module,
+      model.module,
       "--claims",
-      example.claims.join(","),
+      claims,
       "--out",
       exported,
     ]);
     await runZKLean([
-      example.requirements ? "requirements" : "check",
+      model.requirements ? "requirements" : "check",
       "--export",
       exported,
       "--claims",
-      example.claims.join(","),
+      claims,
       "--axioms",
-      example.axioms.join(","),
+      model.axioms.join(","),
       "--axiom-policy",
-      example.policy,
+      model.policy,
       "--out",
-      example.modelPath,
+      model.out,
     ]);
   }
 } finally {

@@ -1,119 +1,103 @@
-/** Source declarations for offline generation and formal artifact validation. */
-import { inventoryAxioms } from "../examples/inventory.ts";
-
-const inventory = [
-  {
-    module: "Independent",
-    file: "independent",
-    claims: ["Client.stock_conserved"],
-    axioms: inventoryAxioms,
-  },
-  {
-    module: "V1",
-    file: "v1",
-    claims: ["Inventory.reservation_safe"],
-    axioms: inventoryAxioms,
-  },
-  {
-    module: "V2",
-    file: "v2",
-    claims: ["Inventory.reservation_safe", "Inventory.valid_request_succeeds"],
-    axioms: inventoryAxioms,
-  },
-  {
-    module: "V3",
-    file: "v3",
-    claims: ["Inventory.reservation_safe"],
-    axioms: [],
-  },
-  {
-    module: "Requirements",
-    file: "requirements",
-    claims: ["Client.stock_conserved"],
-    axioms: [],
-  },
-  {
-    module: "Bridge",
-    file: "bridge",
-    claims: ["Client.stock_conserved"],
-    axioms: ["Inventory.reservation_safe"],
-  },
-  {
-    module: "Axioms",
-    file: "axioms",
-    claims: ["Inventory.assumed_safe"],
-    axioms: ["Trusted.evidence", "Trusted.stock_policy"],
-  },
-  {
-    module: "ChangedDefinition",
-    file: "changed-definition",
-    claims: ["Inventory.reservation_safe"],
-    axioms: [],
-  },
-  {
-    module: "RenamedOperation",
-    file: "renamed-operation",
-    claims: ["Backorders.reservation_safe"],
-    axioms: [],
-  },
-];
-
-export interface ModelExample {
+/** Every Lean model the repository checks, and where its artifacts live. */
+export interface Model {
   project: string;
-  modelPath: string;
-  certificatePath?: string;
   module: string;
-  file: string;
   claims: string[];
   axioms: string[];
   policy: string;
-  requirements: boolean;
-  certificate: boolean;
+  /** Checked public model, or the requirements snapshot when `requirements`. */
+  out: string;
+  requirements?: true;
+  /** Real Groth16 certificate proving this model. */
+  certificate?: string;
 }
-export const inventoryExamples: ModelExample[] = inventory.map((entry) => ({
-  ...entry,
-  project: "examples/lean",
-  policy: "examples/axioms.json",
-  modelPath: `tests/fixtures/${entry.file}${entry.file === "requirements" ? "" : ".statement"}.json`,
-  requirements: entry.file === "requirements",
-  certificate: ["v1", "v2", "v3", "bridge"].includes(entry.file),
-}));
-export const unitExamples: ModelExample[] = [
-  { module: "V1", file: "v1", claims: ["UnitInventory.conserves"], axioms: [] },
+
+/** Edge cases for the policy tests, which sign their checked models. */
+const fixture = (
+  module: string,
+  name: string,
+  claims: string[],
+  axioms: string[] = [],
+): Model => ({
+  project: "tests/fixtures/lean",
+  policy: "tests/fixtures/lean/axioms.json",
+  module,
+  claims,
+  axioms,
+  out: `tests/fixtures/${name}.statement.json`,
+});
+
+/** The runnable example, with real certificates. */
+const example = (
+  module: string,
+  name: string,
+  claims: string[],
+  axioms: string[] = [],
+): Model => ({
+  project: "examples/inventory",
+  policy: "examples/inventory/axioms.json",
+  module,
+  claims,
+  axioms,
+  out: `tests/fixtures/unit/${name}.statement.json`,
+  certificate: `examples/inventory/certificates/${name}.json`,
+});
+
+export const models: Model[] = [
+  fixture("V1", "v1", ["Inventory.reservation_safe"], ["propext"]),
+  fixture(
+    "V2",
+    "v2",
+    ["Inventory.reservation_safe", "Inventory.valid_request_succeeds"],
+    ["propext"],
+  ),
+  fixture("V3", "v3", ["Inventory.reservation_safe"]),
+  fixture(
+    "Bridge",
+    "bridge",
+    ["Client.stock_conserved"],
+    ["Inventory.reservation_safe"],
+  ),
+  fixture(
+    "Independent",
+    "independent",
+    ["Client.stock_conserved"],
+    ["propext"],
+  ),
+  fixture(
+    "Axioms",
+    "axioms",
+    ["Inventory.assumed_safe"],
+    ["Trusted.evidence", "Trusted.stock_policy"],
+  ),
+  fixture("ChangedDefinition", "changed-definition", [
+    "Inventory.reservation_safe",
+  ]),
+  fixture("RenamedOperation", "renamed-operation", [
+    "Backorders.reservation_safe",
+  ]),
   {
-    module: "V2",
-    file: "v2",
-    claims: ["UnitInventory.available_succeeds", "UnitInventory.conserves"],
-    axioms: [],
+    ...fixture("Requirements", "requirements", ["Client.stock_conserved"]),
+    out: "tests/fixtures/requirements.json",
+    requirements: true,
   },
-  { module: "V3", file: "v3", claims: ["UnitInventory.conserves"], axioms: [] },
+  example("V1", "v1", ["UnitInventory.conserves"]),
+  example("V2", "v2", [
+    "UnitInventory.available_succeeds",
+    "UnitInventory.conserves",
+  ]),
+  example("V3", "v3", ["UnitInventory.conserves"]),
+  example(
+    "Bridge",
+    "bridge",
+    ["UnitClient.nonempty"],
+    ["UnitInventory.conserves"],
+  ),
   {
-    module: "Bridge",
-    file: "bridge",
-    claims: ["UnitClient.nonempty"],
-    axioms: ["UnitInventory.conserves"],
+    ...fixture("Requirements", "requirements", ["UnitClient.nonempty"]),
+    project: "examples/inventory",
+    policy: "examples/inventory/axioms.json",
+    out: "examples/inventory/certificates/requirements.json",
+    requirements: true,
   },
-  {
-    module: "Requirements",
-    file: "requirements",
-    claims: ["UnitClient.nonempty"],
-    axioms: [],
-  },
-].map((entry) => ({
-  ...entry,
-  file: `unit/${entry.file}`,
-  project: "examples/unit-inventory",
-  policy: "examples/unit-inventory/axioms.json",
-  modelPath:
-    entry.file === "requirements"
-      ? "examples/unit-inventory/certificates/requirements.json"
-      : `tests/fixtures/unit/${entry.file}.statement.json`,
-  ...(entry.file === "requirements"
-    ? {}
-    : {
-        certificatePath: `examples/unit-inventory/certificates/${entry.file}.json`,
-      }),
-  requirements: entry.file === "requirements",
-  certificate: entry.file !== "requirements",
-}));
-export const examples = [...inventoryExamples, ...unitExamples];
+];

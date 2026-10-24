@@ -1,23 +1,26 @@
-/** Bind committed cryptographic fixtures to freshly checked source models. */
+/** Each committed certificate proves exactly its freshly checked source model. */
 import { createVerifier, parseCertificate } from "zklean";
 import { canonical, statement } from "zklean/encoding";
-import { unitExamples } from "./models.ts";
+import { models } from "./models.ts";
 
-const verifier = createVerifier();
-for (const example of unitExamples.filter((entry) => entry.certificate)) {
+const { verify } = createVerifier();
+for (const model of models) {
+  if (!model.certificate) continue;
   const certificate = parseCertificate(
-    await Bun.file(example.certificatePath!).json(),
+    await Bun.file(model.certificate).json(),
   );
-  const checked = await Bun.file(example.modelPath).json();
-  if (canonical(statement(certificate)) !== canonical(checked))
+  if (
+    canonical(statement(certificate)) !==
+    canonical(await Bun.file(model.out).json())
+  )
     throw new Error(
-      `${example.file}: certificate differs from the source-checked model`,
+      `${model.certificate} differs from its checked source model`,
     );
-  const result = await verifier.verify(certificate, {
-    allowedAxioms: example.axioms,
-    axiomPins: await Bun.file(example.policy).json(),
+  const result = await verify(certificate, {
+    allowedAxioms: model.axioms,
+    axiomPins: await Bun.file(model.policy).json(),
   });
   if (result.status !== "verified")
-    throw new Error(`${example.file}: ${JSON.stringify(result)}`);
-  console.log(`${example.file}: real proof matches the checked source model`);
+    throw new Error(`${model.certificate}: ${JSON.stringify(result)}`);
+  console.log(`${model.certificate}: verified`);
 }

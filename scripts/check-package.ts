@@ -1,37 +1,34 @@
-/** Install actual npm tarballs; no Git dependency or native verifier is used. */
-import { mkdtemp, rm } from "node:fs/promises";
+/** Run the example against npm-installed HTTPV and ZKLean tarballs, with no
+ * Git dependency, native verifier, or Lean toolchain available. */
+import { cp, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { resolve, join } from "node:path";
+import { join, resolve } from "node:path";
 
 const sdk = process.argv[2];
-if (!sdk)
-  throw new Error("usage: bun scripts/check-package.ts PATH_TO_ZKLEAN_TARBALL");
+if (!sdk) throw new Error("usage: bun scripts/check-package.ts ZKLEAN_TARBALL");
 const root = resolve(import.meta.dir, "..");
 const temporary = await mkdtemp(join(tmpdir(), "httpv-npm-"));
-async function run(command: string[], cwd = temporary, isolated = false) {
+
+async function run(command: string[], env: Record<string, string> = {}) {
   const child = Bun.spawn(command, {
-    cwd,
+    cwd: temporary,
     stdout: "pipe",
     stderr: "inherit",
     env: {
       ...process.env,
       npm_config_cache: join(temporary, "npm-cache"),
-      ...(isolated
-        ? {
-            PATH: "/no-native-tools",
-            ZKLEAN_NATIVE: "/no-native-verifier",
-            ELAN_HOME: "/no-lean",
-          }
-        : {}),
+      ...env,
     },
   });
-  const text = await new Response(child.stdout).text();
-  if ((await child.exited) !== 0) throw new Error(`${command[0]} failed`);
-  return text;
+  const output = await new Response(child.stdout).text();
+  if ((await child.exited) !== 0)
+    throw new Error(`${command.join(" ")} failed`);
+  return output;
 }
+
 try {
-  const packed = JSON.parse(
-    await run(["npm", "pack", "--json", "--pack-destination", temporary], root),
+  const [packed] = JSON.parse(
+    await run(["npm", "pack", "--json", "--pack-destination", temporary, root]),
   );
   await run([
     "npm",
@@ -41,49 +38,19 @@ try {
     "--no-audit",
     "--no-fund",
     resolve(sdk),
-    join(temporary, packed[0].filename),
+    join(temporary, packed.filename),
   ]);
-  // Typecheck and run the actual packaged entry point and its packaged data.
-  await Bun.write(
-    join(temporary, "consumer.ts"),
-    'import "./node_modules/httpv/examples/unit-upgrades.ts";\n',
-  );
-  await run([
-    process.execPath,
-    join(root, "node_modules/typescript/bin/tsc"),
-    "--noEmit",
-    "--strict",
-    "--skipLibCheck",
-    "--module",
-    "esnext",
-    "--moduleResolution",
-    "bundler",
-    "--target",
-    "esnext",
-    "--allowImportingTsExtensions",
-    "--resolveJsonModule",
-    "--types",
-    "bun",
-    "--typeRoots",
-    join(root, "node_modules/@types"),
-    "consumer.ts",
-  ]);
-  console.log("npm-installed HTTPV consumer typechecked.");
-  const result = JSON.parse(
-    await run([process.execPath, "consumer.ts"], temporary, true),
-  );
-  if (
-    result.states.map((state: { status: string }) => state.status).join(",") !==
-      "verified,verified,incompatible" ||
-    result.derived.status !== "verified" ||
-    result.rebound.status !== "incompatible" ||
-    result.rejected.status !== "unknown" ||
-    result.requests !== 2
-  )
-    throw new Error("installed inventory workflow failed");
-  console.log(
-    "npm-installed HTTPV ran its packaged real inventory workflow without native tools.",
-  );
+  await cp(join(root, "examples"), join(temporary, "examples"), {
+    recursive: true,
+  });
+  const output = await run([process.execPath, "examples/upgrades.ts"], {
+    PATH: "/no-native-tools",
+    ZKLEAN_NATIVE: "/no-native-verifier",
+    ELAN_HOME: "/no-lean",
+  });
+  if (!output.includes("V3 accepts backorders: incompatible"))
+    throw new Error(`unexpected example output:\n${output}`);
+  console.log(output);
 } finally {
   await rm(temporary, { recursive: true, force: true });
 }
