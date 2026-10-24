@@ -144,8 +144,9 @@ interval, requirements, axiom policy, and failure policy.
 A monitor MUST bound each check, including verification, by a timeout, and MUST
 discard a result that arrives after it. A verified result MUST stop gating
 requests after a maximum age, even while the next check is running. Gating MUST
-happen where a request depends on the guarantee; a change notification is not
-a gate.
+happen where a request depends on the guarantee, and MUST reject unchecked,
+expired, stopped, incompatible, and unknown states; a change notification is
+not a gate.
 
 Periodic checking cannot show what a server does between checks. Stronger
 guarantees need execution attestation or per-response proofs.

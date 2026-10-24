@@ -129,3 +129,57 @@ test("discovery refuses redirects, wrong media types, failures and oversized bod
     }),
   ).rejects.toMatchObject({ reason: "unavailable" });
 });
+
+test("q=0 declines discovery, and a __proto__ method is still advertised", async () => {
+  using app = listen(advertise(v1));
+  for (const accept of [`${MEDIA_TYPE};q=0, */*`, `${MEDIA_TYPE}; q = 0.000`])
+    expect(
+      await fetch(app.url, {
+        method: "OPTIONS",
+        headers: { Accept: accept },
+      }).then((r) => r.json()),
+    ).toEqual({ method: "OPTIONS" });
+
+  const server = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    ...serve({
+      routes: { "__proto__ /r": advertise(v1) },
+      fetch: () => new Response(),
+    }),
+  });
+  try {
+    expect(
+      await createHTTPV().query(`http://127.0.0.1:${server.port}/r`, {
+        ...local,
+        method: "__proto__",
+      }),
+    ).toEqual(advertise(v1));
+  } finally {
+    server.stop(true);
+  }
+});
+
+test("a caller's signal does not remove the discovery timeout", async () => {
+  const hanging = createHTTPV({
+    fetch: (_url, init) =>
+      new Promise((_, reject) =>
+        init.signal!.addEventListener("abort", () =>
+          reject(init.signal!.reason),
+        ),
+      ),
+  });
+  const started = Date.now();
+  const query = hanging.query("https://example.test/r", {
+    method: "POST",
+    signal: new AbortController().signal,
+    timeout: 50,
+  });
+  const hung = Bun.sleep(1000).then(() => "hung");
+  expect(
+    await Promise.race([query.catch((error) => error), hung]),
+  ).toMatchObject({ reason: "unavailable" });
+  expect(Date.now() - started).toBeLessThan(1000);
+  for (const maxResponseBytes of [Number.NaN, Infinity, 0])
+    expect(() => createHTTPV({ maxResponseBytes })).toThrow(RangeError);
+});

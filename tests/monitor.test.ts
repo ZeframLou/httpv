@@ -15,8 +15,8 @@ async function setup() {
   const [v1, v2, v3] = await Promise.all(
     ["v1", "v2", "v3"].map((name) => authority.issue(name)),
   );
-  let current = v1!;
-  const app = listen(() => advertise(current));
+  let current = advertise(v1!);
+  const app = listen(() => current);
   const dependency = {
     url: app.url,
     method: "POST",
@@ -29,8 +29,8 @@ async function setup() {
     authority,
     app,
     dependency,
-    serveVersion(index: number) {
-      current = [v1, v2, v3][index]!;
+    serveVersion(index: number, name = operation) {
+      current = advertise([v1, v2, v3][index]!, name);
     },
   };
 }
@@ -137,4 +137,107 @@ test("polling reports an unavailable dependency and stops on an external signal"
   await Bun.sleep(30);
   expect(statuses).toEqual(["verified/exact-match", "unknown/unavailable"]);
   expect(calls).toBe(2);
+});
+
+test("expiry is notified, and so is recovery with the same certificate", async () => {
+  const { authority, app, dependency } = await setup();
+  using _ = app;
+  const reasons: string[] = [];
+  const monitor = createHTTPV({ backend: authority.backend }).watch(
+    dependency,
+    {
+      interval: 60_000,
+      maxAge: 50,
+      onChange: (result) => reasons.push(result.reason),
+    },
+  );
+  try {
+    await monitor.refresh();
+    await Bun.sleep(100);
+    await monitor.refresh();
+    expect(reasons).toEqual(["exact-match", "expired", "exact-match"]);
+  } finally {
+    monitor.stop();
+  }
+});
+
+test("a change of advertised operation alone is notified", async () => {
+  const { authority, app, dependency, serveVersion } = await setup();
+  using _ = app;
+  const operations: (string | undefined)[] = [];
+  serveVersion(0, "Nat.sub");
+  const monitor = createHTTPV({ backend: authority.backend }).watch(
+    dependency,
+    {
+      interval: 60_000,
+      onChange: (result) => operations.push(result.advertisedOperation),
+    },
+  );
+  try {
+    await monitor.refresh();
+    serveVersion(0, "Inventory.reservation_safe");
+    expect((await monitor.refresh()).reason).toBe("operation-mismatch");
+    expect(operations).toEqual(["Nat.sub", "Inventory.reservation_safe"]);
+  } finally {
+    monitor.stop();
+  }
+});
+
+test("a check that blocks past its timeout is discarded even if it finishes first", async () => {
+  const { authority, app, dependency } = await setup();
+  using _ = app;
+  const monitor = createHTTPV({
+    backend: {
+      identity: authority.backend.identity,
+      async verify(certificate) {
+        const valid = await authority.backend.verify(certificate);
+        const until = Date.now() + 400;
+        while (Date.now() < until);
+        return valid;
+      },
+    },
+  }).watch(dependency, { interval: 60_000, timeout: 200 });
+  try {
+    expect((await monitor.refresh()).reason).toBe("timeout");
+    expect(() => monitor.requireVerified()).toThrow("timeout");
+  } finally {
+    monitor.stop();
+  }
+});
+
+test("stopping during a check reports stopped", async () => {
+  const { authority, app, dependency } = await setup();
+  using _ = app;
+  let release!: () => void;
+  const stall = new Promise<void>((resolve) => (release = resolve));
+  const monitor = createHTTPV({
+    backend: {
+      identity: authority.backend.identity,
+      async verify(certificate) {
+        await stall;
+        return authority.backend.verify(certificate);
+      },
+    },
+  }).watch(dependency, { interval: 60_000 });
+  const pending = monitor.refresh();
+  monitor.stop();
+  release();
+  expect((await pending).reason).toBe("stopped");
+  expect(monitor.current?.reason).toBe("stopped");
+});
+
+test("settings must be positive integers", async () => {
+  const { authority, app, dependency } = await setup();
+  using _ = app;
+  const httpv = createHTTPV({ backend: authority.backend });
+  for (const settings of [
+    { interval: "1000" },
+    { interval: 0 },
+    { interval: 1000, timeout: Number.NaN },
+    { interval: 1000, maxAge: 1.5 },
+    { interval: 2 ** 31 },
+  ])
+    expect(() =>
+      httpv.watch(dependency, settings as unknown as { interval: number }),
+    ).toThrow(RangeError);
 });

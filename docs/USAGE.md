@@ -137,7 +137,7 @@ compares the certificate with your requirements. It never throws.
 | -------------- | ---------------------------------------------------------------- | --------------------------------------------- |
 | `verified`     | The certificate is valid and establishes your requirements.      | `exact-match`, `bridge`                       |
 | `incompatible` | The certificate is valid but does not establish your requirements. | `operation-mismatch`, `requirements-not-met` |
-| `unknown`      | Nothing could be established.                                    | Discovery, certificate or configuration failures |
+| `unknown`      | Nothing could be established.                                    | Discovery, certificate, bridge or configuration failures |
 
 An exact match requires every required statement, and everything it depends
 on, to be certified with identical definitions. Bound-variable names may differ
@@ -151,8 +151,10 @@ none. A custom axiom also needs its reviewed fingerprint in `axiomPins`;
 otherwise the result is `unknown / unpinned-axiom`.
 
 For lower-level control, `httpv.query(url, { method })` returns the
-advertisement and throws a `DiscoveryError`, and
+advertisement, throwing a `DiscoveryError` if discovery fails, and
 `httpv.compare(advertisement, requirement)` runs the rest of the check.
+Discovery gives up after `timeout` milliseconds, 10 s by default, even if you
+also pass a `signal`.
 
 ## Use a weaker requirement
 
@@ -215,8 +217,9 @@ process.on("SIGTERM", () => monitor.stop());
 
 Call `requireVerified()` wherever a request depends on the contract. It throws
 unless the latest result is `verified` and younger than `maxAge`. `onChange` is
-for notifications: it runs on the first result and whenever the status, reason,
-advertised operation, or certificate changes. Monitoring continues if it
+for notifications: it runs on the first result, when a verified result
+expires, and whenever the status, reason, advertised operation, or certificate
+changes. Monitoring continues if it
 throws, but the error is reported as uncaught, which ends a Bun process unless
 you handle `uncaughtException`.
 
@@ -228,7 +231,8 @@ you handle `uncaughtException`.
 | `signal`   | none                 | Stops the monitor when aborted.                 |
 
 `monitor.refresh()` runs a check now; simultaneous calls share one.
-`monitor.current` returns the latest result, and `stop()` ends polling.
+`monitor.current` returns the latest result, and `stop()` ends polling and
+invalidates the result.
 Polling cannot tell you what the server does between checks.
 
 ## Bind requirements to Lean sources

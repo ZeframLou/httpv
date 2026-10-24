@@ -6,10 +6,18 @@ import {
 } from "./protocol.ts";
 import type { Advertisement, Handler, ServeOptions, Source } from "./types.ts";
 
+/** The HTTPV media type is listed without `q=0`, which means "not acceptable". */
 function acceptsDiscovery(accept: string | null): boolean {
-  return (accept ?? "")
-    .split(",")
-    .some((part) => part.split(";")[0]!.trim().toLowerCase() === MEDIA_TYPE);
+  return (accept ?? "").split(",").some((range) => {
+    const [type, ...parameters] = range
+      .toLowerCase()
+      .split(";")
+      .map((part) => part.replace(/\s/g, ""));
+    return (
+      type === MEDIA_TYPE &&
+      !parameters.some((parameter) => /^q=0(\.0*)?$/.test(parameter))
+    );
+  });
 }
 
 /** Answer HTTPV discovery and pass every other request to `fetch`.
@@ -54,12 +62,17 @@ export function serve({ routes, fetch }: ServeOptions): { fetch: Handler } {
           { status: 404, headers },
         );
       try {
-        const contracts: Record<string, Advertisement> = {};
-        for (const [method, source] of methods)
-          contracts[method] =
-            typeof source === "function"
-              ? parseAdvertisement(await source())
-              : source;
+        // fromEntries defines own properties, so a method named __proto__ works.
+        const contracts: Record<string, Advertisement> = Object.fromEntries(
+          await Promise.all(
+            [...methods].map(async ([method, source]) => [
+              method,
+              typeof source === "function"
+                ? parseAdvertisement(await source())
+                : source,
+            ]),
+          ),
+        );
         return Response.json(encodeDiscovery(contracts), { headers });
       } catch {
         return Response.json(

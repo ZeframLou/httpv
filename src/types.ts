@@ -59,9 +59,13 @@ export interface QueryOptions {
   /** HTTP is accepted only when explicitly enabled for local development. */
   allowInsecureHttp?: boolean;
   signal?: AbortSignal | undefined;
+  /** Milliseconds before discovery is abandoned. Default 10 s. */
+  timeout?: number | undefined;
 }
 
-export interface Dependency extends Requirement, Omit<QueryOptions, "signal"> {
+export interface Dependency
+  extends Requirement,
+    Omit<QueryOptions, "signal" | "timeout"> {
   url: string;
 }
 
@@ -71,7 +75,7 @@ export interface WatchOptions {
   timeout?: number;
   /** Age after which a verified result stops gating requests. Default interval + timeout. */
   maxAge?: number;
-  /** Called on the first result and whenever status, reason or identity changes. */
+  /** Called on the first result, on expiry, and whenever status, reason or identity changes. */
   onChange?(result: Result): void;
   signal?: AbortSignal;
 }

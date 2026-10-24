@@ -14,5 +14,6 @@ certificates. `requirements.json` is the client requirement for `lean/`.
 | `independent`        | Proves the requirement without assuming any remote claim.    |
 | `changed-definition` | Same theorem statement, redefined operation.                 |
 | `renamed-operation`  | The operation under a different name.                        |
+| `weakened-claim`     | Same operation, weaker theorem under the same name.          |
 
 Regenerate them with `bun run fixtures`.

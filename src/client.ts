@@ -29,6 +29,9 @@ import type {
   WatchOptions,
 } from "./types.ts";
 
+const positiveInteger = (value: unknown): value is number =>
+  Number.isSafeInteger(value) && (value as number) > 0;
+
 async function readText(response: Response, limit: number): Promise<string> {
   const chunks: Uint8Array[] = [];
   let size = 0;
@@ -55,11 +58,14 @@ export function createHTTPV(options: ClientOptions = {}) {
   const transport = options.fetch ?? fetch;
   const { verify } = createVerifier(options);
   const maxBytes = options.maxResponseBytes ?? MAX_CERTIFICATE_BYTES;
+  if (!positiveInteger(maxBytes))
+    throw new RangeError("invalid maxResponseBytes");
 
-  /** Fetch the advertisement for one method of a resource. Throws DiscoveryError. */
+  /** Fetch the advertisement for one method of a resource. Throws DiscoveryError
+   * when discovery fails. */
   async function query(
     url: string,
-    { method, allowInsecureHttp, signal }: QueryOptions,
+    { method, allowInsecureHttp, signal, timeout = 10_000 }: QueryOptions,
   ): Promise<Advertisement> {
     const target = new URL(url);
     if (
@@ -80,7 +86,10 @@ export function createHTTPV(options: ClientOptions = {}) {
         headers: { Accept: MEDIA_TYPE, "Cache-Control": "no-cache" },
         cache: "no-store",
         redirect: "error",
-        signal: signal ?? AbortSignal.timeout(10_000),
+        signal: AbortSignal.any([
+          AbortSignal.timeout(timeout),
+          ...(signal ? [signal] : []),
+        ]),
       });
     } catch (error) {
       throw new DiscoveryError("unavailable", String(error));
@@ -112,6 +121,11 @@ export function createHTTPV(options: ClientOptions = {}) {
     advertisement: Advertisement,
     requirement: Requirement,
   ): Promise<Result> {
+    // Own the inputs: the caller's objects may change while verification awaits.
+    [advertisement, requirement] = structuredClone([
+      advertisement,
+      requirement,
+    ]);
     const { certificate } = advertisement;
     const { status, reason, ...identity } = await verify(
       certificate,
@@ -161,15 +175,19 @@ export function createHTTPV(options: ClientOptions = {}) {
         ),
       },
     });
-    if (
-      bridged.status !== "verified" ||
-      !bridgeMatches(certificate, specs, requirement.bridge)
-    )
+    if (bridged.status !== "verified")
       return {
         ...base,
         status: "unknown",
         reason: "invalid-bridge",
         detail: bridged.detail ?? bridged.reason,
+      };
+    if (!bridgeMatches(certificate, specs, requirement.bridge))
+      return {
+        ...base,
+        status: "unknown",
+        reason: "invalid-bridge",
+        detail: "bridge context differs from the requirements or remote model",
       };
     return { ...base, status: "verified", reason: "bridge" };
   }
@@ -177,11 +195,11 @@ export function createHTTPV(options: ClientOptions = {}) {
   /** Query and compare. Never throws; failures are `unknown` results. */
   async function check(
     dependency: Dependency,
-    signal?: AbortSignal,
+    options: Pick<QueryOptions, "signal" | "timeout"> = {},
   ): Promise<Result> {
     try {
       return await compare(
-        await query(dependency.url, { ...dependency, signal }),
+        await query(dependency.url, { ...dependency, ...options }),
         dependency,
       );
     } catch (error) {
@@ -196,35 +214,35 @@ export function createHTTPV(options: ClientOptions = {}) {
     const { interval, timeout = 10_000, onChange } = settings;
     const maxAge = settings.maxAge ?? interval + timeout;
     for (const [name, value] of Object.entries({ interval, timeout, maxAge }))
-      if (!(value > 0 && value <= 0x7fffffff))
+      if (!positiveInteger(value) || value > 0x7fffffff)
         throw new RangeError(`invalid ${name}`);
     const stopper = new AbortController();
     const stopped = (): Result => ({ status: "unknown", reason: "stopped" });
     let latest: Result | undefined;
     let inflight: Promise<Result> | undefined;
     let timer: Timer | undefined;
+    let expiry: Timer | undefined;
     let notified: string | undefined;
 
-    // Verification cannot be cancelled, so a deadline settles the cycle instead
-    // and any late result is discarded.
-    const cycle = (): Promise<Result> => {
+    // Verification cannot be cancelled, so a deadline settles the cycle and a
+    // result that arrives late, even one that won the race, is discarded.
+    const cycle = async (): Promise<Result> => {
+      const started = Date.now();
       const deadline = AbortSignal.any([
         stopper.signal,
         AbortSignal.timeout(timeout),
       ]);
-      const aborted = new Promise<Result>((resolve) =>
-        deadline.addEventListener(
-          "abort",
-          () =>
-            resolve(
-              stopper.signal.aborted
-                ? stopped()
-                : { status: "unknown", reason: "timeout" },
-            ),
-          { once: true },
-        ),
+      const aborted = new Promise<void>((resolve) =>
+        deadline.addEventListener("abort", () => resolve(), { once: true }),
       );
-      return Promise.race([check(dependency, deadline), aborted]);
+      const result = await Promise.race([
+        check(dependency, { signal: deadline, timeout }),
+        aborted,
+      ]);
+      if (stopper.signal.aborted) return stopped();
+      if (!result || Date.now() - started >= timeout)
+        return { status: "unknown", reason: "timeout" };
+      return result;
     };
 
     const notify = (result: Result): void => {
@@ -246,6 +264,12 @@ export function createHTTPV(options: ClientOptions = {}) {
       }
     };
 
+    const expired = (): Result => ({
+      status: "unknown",
+      reason: "expired",
+      checkedAt: latest!.checkedAt!,
+    });
+
     const refresh = (): Promise<Result> => {
       if (stopper.signal.aborted) return Promise.resolve(stopped());
       inflight ??= cycle().then((result) => {
@@ -253,30 +277,31 @@ export function createHTTPV(options: ClientOptions = {}) {
         if (stopper.signal.aborted) return stopped();
         latest = { ...result, checkedAt: Date.now() };
         clearTimeout(timer);
+        clearTimeout(expiry);
         timer = setTimeout(refresh, interval);
+        if (latest.status === "verified")
+          expiry = setTimeout(() => notify(expired()), maxAge);
         notify(latest);
         return { ...latest };
       });
       return inflight;
     };
 
+    // Timers can fire late, so freshness is also checked on every read.
     const current = (): Result | undefined => {
       if (stopper.signal.aborted) return stopped();
       if (
         latest?.status === "verified" &&
         Date.now() - latest.checkedAt! >= maxAge
       )
-        return {
-          status: "unknown",
-          reason: "expired",
-          checkedAt: latest.checkedAt!,
-        };
+        return expired();
       return latest && { ...latest };
     };
 
     const stop = (): void => {
       stopper.abort();
       clearTimeout(timer);
+      clearTimeout(expiry);
     };
     settings.signal?.addEventListener("abort", stop, { once: true });
     if (settings.signal?.aborted) stop();

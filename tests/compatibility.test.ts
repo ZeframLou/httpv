@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { beforeAll, expect, test } from "bun:test";
 import { sha256 } from "zklean/encoding";
 import { createHTTPV } from "../src/index.ts";
+import { bridgeMatches } from "../src/compatibility.ts";
 import type { Certificate, Requirements } from "../src/index.ts";
 import {
   advertise,
@@ -28,6 +29,7 @@ beforeAll(async () => {
     "independent",
     "changed-definition",
     "renamed-operation",
+    "weakened-claim",
   ])
     fixtures[name] = await authority.issue(name);
   required = await requirements();
@@ -155,4 +157,37 @@ test("a stale Lean requirements sidecar fails closed", async () => {
   } finally {
     await rm(directory, { recursive: true });
   }
+});
+
+test("mutating the inputs during verification cannot change what is compared", async () => {
+  const supplied = advertise(structuredClone(fixtures.v3!));
+  const pending = httpv.compare(supplied, {
+    operation,
+    requirements: snapshot(fixtures.v1!),
+    allowedAxioms: inventoryAxioms,
+  });
+  (supplied.certificate as { specs: unknown }).specs = fixtures.v1!.specs;
+  expect(await pending).toMatchObject({ status: "incompatible" });
+});
+
+test("a bridge cannot share a name with a different remote definition", () => {
+  expect(
+    bridgeMatches(fixtures.v1!, required.specs, fixtures.independent!),
+  ).toBe(true);
+  expect(
+    bridgeMatches(
+      fixtures["changed-definition"]!,
+      required.specs,
+      fixtures.independent!,
+    ),
+  ).toBe(false);
+});
+
+test("a bridge stops holding when the remote claim it assumes is weakened", async () => {
+  expect(
+    await compare("weakened-claim", {
+      requirements: required,
+      bridge: fixtures.bridge!,
+    }),
+  ).toMatchObject({ status: "unknown", reason: "invalid-bridge" });
 });

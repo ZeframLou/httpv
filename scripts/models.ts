@@ -70,6 +70,12 @@ export const models: Model[] = [
   fixture("RenamedOperation", "renamed-operation", [
     "Backorders.reservation_safe",
   ]),
+  fixture(
+    "WeakenedClaim",
+    "weakened-claim",
+    ["Inventory.reservation_safe"],
+    ["propext"],
+  ),
   {
     ...fixture("Requirements", "requirements", ["Client.stock_conserved"]),
     out: "tests/fixtures/requirements.json",
