@@ -2,7 +2,9 @@
 
 ## Install
 
-Install from npm:
+The npm packages are currently unpublished. Use the
+[tarball review workflow](DEVELOPMENT.md#check-unpublished-packages) until they are
+published. After publication, install from npm:
 
 ```sh
 npm install httpv
@@ -31,7 +33,10 @@ Bun.serve({
   port: 3000,
   ...HTTPV.serve({
     routes: {
-      "POST /reservations": "./certs/reservations.json",
+      "POST /reservations": {
+        operation: "Inventory.POST_reservations",
+        certificate: "./certs/reservations.json",
+      },
     },
     fetch: application,
   }),
@@ -42,15 +47,17 @@ Run `bun server.ts`. HTTPV handles `OPTIONS` requests that accept
 `application/httpv+json`; other requests go to your handler. No verifier is
 needed to serve certificates.
 
-Route paths match exactly. A route value can be a file path, a certificate
-object, or a function returning a certificate or a promise of one. Files and
-functions are read on each discovery request, so you can update advertisements
-without restarting the server. Deploy each certificate with the behavior it
-describes, and expose the endpoint over HTTPS in production.
+Route paths match exactly. Each route binds an `operation` declaration to a
+`certificate`, supplied as an object or file path. Static objects are snapshotted
+at registration; files are reloaded on each discovery request. For atomic
+updates to both fields, supply a function returning the complete
+`{ operation, certificate }` pair or a promise of one. The operation must belong
+to the certified claims’ public dependency context. Deploy each advertisement
+with the behavior it describes, and expose the endpoint over HTTPS in production.
 
 ## Configure a client verifier
 
-The npm installation supplies ZKLean's embedded WebAssembly verifier and pinned
+The SDK supplies ZKLean's embedded WebAssembly verifier and pinned
 checker key. Save this as `httpv.ts`:
 
 ```ts
@@ -59,7 +66,8 @@ import { createHTTPV } from "httpv";
 export const httpv = createHTTPV();
 ```
 
-The trusted key comes from the SDK, never from the API being checked. Client
+The trusted key comes from the SDK, never from the API being checked. Pairing
+checks run in a bounded worker pool outside the application event loop. Client
 verification needs no native executable, prover, circuit download, or Lean
 process. Generate certificates separately with the ZKLean CLI before deployment.
 
@@ -102,9 +110,10 @@ Save this as `check.ts`, using your API's HTTPS URL:
 import { httpv } from "./httpv.ts";
 
 const url = "https://inventory.example.com/reservations";
-const certificate = await httpv.query(url, { method: "POST" });
+const advertisement = await httpv.query(url, { method: "POST" });
 const result = await httpv.checkCompatibility({
-  certificate,
+  operation: "Inventory.POST_reservations",
+  advertisement,
   requirements: "./specs/requirements.json",
   allowedAxioms: ["propext"],
   mode: "exact",
@@ -122,8 +131,10 @@ const response = await fetch(url, {
 console.log(response.status, await response.json());
 ```
 
-Run `bun check.ts`. `query` retrieves a certificate; `checkCompatibility`
-verifies it and compares its model with your requirements. Choose
+Run `bun check.ts`. `query` retrieves an advertisement containing the endpoint’s
+operation and certificate; `checkCompatibility` authenticates the certificate,
+checks the expected operation, and compares its model with your requirements.
+Choose
 `allowedAxioms` deliberately: `["propext"]` permits the axiom used by the
 inventory example, while `[]` accepts only certificates with no axioms.
 
@@ -135,7 +146,7 @@ inventory example, while `[]` accepts only certificates with no axioms.
 
 This example blocks requests unless the result is `verified`. A discovery
 failure throws a `DiscoveryError` with reason `unavailable`,
-`missing-certificate`, or `invalid-certificate`; the application also needs a
+`missing-certificate`, or `invalid-advertisement`; the application also needs a
 failure policy for these errors.
 
 `mode: "exact"` requires the requested statements and all their resolved
@@ -160,12 +171,27 @@ Replace the compatibility check above with:
 
 ```ts
 const result = await httpv.checkCompatibility({
-  certificate,
+  operation: "Inventory.POST_reservations",
+  advertisement,
   requirements: "./specs/requirements.json",
   allowedAxioms: ["propext"],
   derivation: await Bun.file("./contracts/bridge.json").json(),
 });
 ```
+
+Every compatibility check and monitor requires the expected `operation` name,
+such as `Inventory.POST_reservations`. It must occur in the reviewed requirement
+claim closure and match the server-advertised entrypoint. Its complete resolved
+context must also match the authenticated remote claim closure. A bridge cannot
+supply an absent operation or authorize a different advertised entrypoint, even
+when the certificate contains both functions.
+
+A missing, empty, or unresolved local operation returns
+`unknown / invalid-operation-binding`. A remote operation mismatch returns
+`incompatible / operation-mismatch` in exact mode and
+`unknown / operation-mismatch` in implication mode. These checks run before
+compatibility cache lookup, so changing the entrypoint invalidates an earlier
+acceptance even when the certificate is unchanged.
 
 The default mode accepts an exact match or a valid bridge. A mismatch without
 a bridge returns `unknown` with reason `missing-derivation`; it does not prove
@@ -181,6 +207,7 @@ Save this as `watch.ts`:
 import { httpv } from "./httpv.ts";
 
 const monitor = httpv.watch({
+  operation: "Inventory.POST_reservations",
   url: "https://inventory.example.com/reservations",
   method: "POST",
   requirements: "./specs/requirements.json",
@@ -218,7 +245,8 @@ process.on("SIGTERM", () => monitor.stop());
 
 Run `bun watch.ts`. Watching starts immediately and polls again after each
 check. `onChange` must be synchronous; it runs for the first result and when the
-status, reason, certificate identity, or model identity changes. Discovery
+status, reason, advertised operation, certificate identity, or model identity
+changes. Discovery
 failures become `unknown` results delivered to `onChange`; `onError` handles
 errors thrown by your change callback.
 
@@ -233,8 +261,8 @@ a check, and `stop()` invalidates the result and cancels discovery and future
 polling. Simultaneous refreshes share one check. Polling does not establish what
 the server does between checks or bind a later response to a certificate.
 
-For a complete inventory upgrade demonstration, see
-[Development](DEVELOPMENT.md#run-the-upgrade-demonstration).
+For an inventory upgrade demonstration, see
+[Development](DEVELOPMENT.md#run-the-arithmetic-upgrade-demonstration).
 
 ## Derive a weaker requirement
 
@@ -267,7 +295,8 @@ with the client. Supply the bridge to HTTPV:
 
 ```ts
 const result = await httpv.checkCompatibility({
-  certificate,
+  operation: "Inventory.POST_reservations",
+  advertisement,
   requirements: "./specs/requirements.json",
   derivation: await Bun.file("./specs/bridge.json").json(),
   allowedAxioms: ["propext"],
@@ -278,8 +307,11 @@ if (result.status !== "verified") throw new Error(result.reason);
 HTTPV permits a bridge to assume only authenticated remote claims and your
 explicitly permitted axioms. It checks the assumed claims' complete types and
 resolved dependency contexts. Binder display names may differ; changed
-definitions with the same names require distinct or versioned contexts before
-they can coexist in a bridge. Valid certificates alone do not establish an
+definitions under the same names cannot share a bridge context. Operation
+bindings are conservative: names and resolved kernel content must remain stable.
+A renamed operation requires newly reviewed requirements and bindings; this
+implementation does not infer or accept a name mapping from a bridge. Valid
+certificates alone do not establish an
 implication between them.
 
 ## Bind a snapshot to local Lean sources

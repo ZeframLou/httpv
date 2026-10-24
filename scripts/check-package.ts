@@ -50,13 +50,13 @@ import { createHTTPV } from "httpv";
 const httpv = createHTTPV();
 const certificate = await Bun.file("certificate.json").json();
 const server = Bun.serve({hostname: "127.0.0.1", port: 0, ...httpv.serve({
-  routes: {"POST /identity": certificate}, fetch: () => new Response("ok"),
+  routes: {"POST /identity": {operation: "Demo.identity", certificate}}, fetch: () => new Response("ok"),
 })});
 try {
   const received = await httpv.query(
     "http://127.0.0.1:" + server.port + "/identity", {method: "POST", allowInsecureHttp: true},
   );
-  const result = await httpv.checkCompatibility({certificate: received,
+  const result = await httpv.checkCompatibility({advertisement: received, operation: "Demo.identity",
     requirements: {format: "zklean/requirements/1", specs: certificate.specs},
     mode: "exact", allowedAxioms: [],
   });

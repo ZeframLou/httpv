@@ -12,7 +12,8 @@ bun run check
 
 Development pins ZKLean to a Git commit. Published HTTPV requires the npm
 `zklean@0.1.0` SDK as a peer dependency, which npm installs automatically.
-HTTPV imports only its public package exports; no sibling checkout, Rust
+Both npm packages are currently unpublished. HTTPV imports only the SDK’s public
+package exports; no sibling checkout, Rust
 compiler, or SP1 toolchain is needed for the transport and policy tests.
 
 The dependency URL selects Git transport so ordinary Git credentials work for
@@ -37,7 +38,8 @@ are development dependencies and are not fetched by consumers.
 
 Set the repository's `ZKLEAN_READ_TOKEN` Actions secret to a read-only token
 with Contents access to `ZeframLou/zklean`. CI uses it only to fetch the private
-dependency. The workflow checks formatting, TypeScript, and HTTP end-to-end tests.
+dependency. The workflow checks formatting, TypeScript, and HTTP end-to-end
+tests and the installed npm consumer.
 
 ## Test real proof verification
 
@@ -65,7 +67,7 @@ cryptographic proofs. `requirements.json` is the client's local requirement
 snapshot. The committed identity certificate and verifier profile originate
 from ZKLean's cryptographic integration test.
 
-## Run the upgrade demonstration
+## Run the arithmetic upgrade demonstration
 
 ```sh
 ZKLEAN_PROVE_TIMEOUT=86400000 bun scripts/prove-examples.ts
@@ -95,3 +97,35 @@ and pass its tarball to `bun scripts/check-package.ts PATH_TO_ZKLEAN_TARBALL`.
 The script packs HTTPV, installs both tarballs with npm, and discovers and
 verifies a real proof through their public APIs with native tools unavailable.
 It does not fetch a private Git dependency or use a sibling source checkout.
+
+## Check unpublished packages
+
+Pack the SDK and HTTPV without publishing:
+
+```sh
+# In the ZKLean source checkout:
+npm pack --pack-destination dist
+# In the HTTPV source checkout:
+mkdir -p dist
+npm pack --pack-destination dist
+```
+
+In a separate Bun application, install the two prepared tarballs:
+
+```sh
+npm install /path/to/zklean-0.1.0.tgz /path/to/httpv-0.1.0.tgz
+```
+
+For the complete installed-consumer check, run
+`bun scripts/check-package.ts /path/to/zklean-0.1.0.tgz` in HTTPV. It typechecks
+and runs discovery and verification with native tools unavailable. Package
+publication, binary host creation, and releases remain separate maintainer actions.
+
+## Cost and deployment policy
+
+The measured identity and pipeline examples have larger complete certificates
+and slower Groth16 verification than direct Nanoda checking. Proof generation
+can take hours and use more than 12 GiB RSS. Use offline certificates when
+proof privacy or recipient portability justifies that cost; direct source
+checking remains available through the independent CLI. The arbitrary-quantity arithmetic example has its own larger resource budget.
+No efficiency advantage is assumed.

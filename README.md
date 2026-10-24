@@ -31,11 +31,13 @@ Clients independently verify advertised guarantees but still trust the server
 to implement them in its deployed code and responses. HTTPV cannot detect a
 server violating its specification while advertising an unchanged certificate,
 and polling can miss changes between checks. Each client chooses its trusted
-verifier, permitted axioms, and policy for failed or inconclusive checks.
+verifier, operation bindings, permitted axioms, and failure policy.
 
 ## Get started
 
-Install from npm:
+The npm packages are not published yet. Private reviewers can
+[install prepared tarballs](docs/DEVELOPMENT.md#check-unpublished-packages).
+After publication, install from npm:
 
 ```sh
 npm install httpv
