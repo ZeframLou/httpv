@@ -2,7 +2,6 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { beforeAll, expect, test } from "bun:test";
-import { sha256 } from "zklean/encoding";
 import { createHTTPV } from "../src/index.ts";
 import { bridgeMatches } from "../src/compatibility.ts";
 import type { Certificate, Requirements } from "../src/index.ts";
@@ -126,34 +125,21 @@ test("certificate failures are unknown", async () => {
   ).toMatchObject({ status: "unknown", reason: "invalid-certificate" });
 });
 
-test("a stale Lean requirements sidecar fails closed", async () => {
+test("unusable requirements fail closed", async () => {
   const directory = await mkdtemp(join(tmpdir(), "httpv-"));
-  const lean = join(directory, "Requirements.lean");
-  const imported = join(directory, "Imported.lean");
+  const path = join(directory, "requirements.json");
   try {
-    await Bun.write(lean, "import Imported\n");
-    await Bun.write(imported, "-- definitions\n");
-    await Bun.write(
-      `${lean}.zklean.json`,
-      JSON.stringify({
-        ...snapshot(fixtures.v1!),
-        sourceManifest: {
-          format: "zklean/source-manifest/1",
-          files: {
-            "Requirements.lean": sha256("import Imported\n"),
-            "Imported.lean": sha256("-- definitions\n"),
-          },
-        },
-      }),
-    );
-    expect((await compare("v1", { requirements: lean })).status).toBe(
+    await Bun.write(path, JSON.stringify(snapshot(fixtures.v1!)));
+    expect((await compare("v1", { requirements: path })).status).toBe(
       "verified",
     );
-    await Bun.write(imported, "-- changed\n");
-    expect(await compare("v1", { requirements: lean })).toMatchObject({
-      status: "unknown",
-      reason: "invalid-requirements",
-    });
+    for (const requirements of [
+      join(directory, "missing.json"),
+      { ...snapshot(fixtures.v1!), extra: true },
+    ])
+      expect(
+        await compare("v1", { requirements: requirements as Requirements }),
+      ).toMatchObject({ status: "unknown", reason: "invalid-requirements" });
   } finally {
     await rm(directory, { recursive: true });
   }

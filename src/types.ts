@@ -46,7 +46,7 @@ export interface Advertisement {
 export interface Requirement {
   /** Expected entrypoint; it must occur in the requirement claims' context. */
   operation: string;
-  /** A requirements snapshot, its JSON path, or a `.lean` path with a sidecar. */
+  /** A requirements snapshot or the path of its JSON file. */
   requirements: Requirements | string;
   allowedAxioms: readonly string[];
   axiomPins?: Readonly<Record<string, string>>;

@@ -235,21 +235,6 @@ you handle `uncaughtException`.
 invalidates the result.
 Polling cannot tell you what the server does between checks.
 
-## Bind requirements to Lean sources
-
-A JSON snapshot is self-contained. If you instead pass a `.lean` path, HTTPV
-loads the sidecar `<path>.zklean.json`, which you generate during development:
-
-```sh
-zklean requirements --project specs --module Requirements \
-  --claims Client.stock_conserved --out specs/Requirements.lean.zklean.json
-```
-
-The sidecar records digests of the source, its imports, Lake project files, and
-toolchain. If any recorded file is missing or changed, the result is
-`unknown / invalid-requirements`. Regenerate and review the sidecar after
-editing the sources. HTTPV never runs Lean.
-
 ## Local development
 
 HTTPS is required and redirects are rejected. For a local server, add
