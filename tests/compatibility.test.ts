@@ -1,144 +1,143 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { beforeAll, expect, test } from "bun:test";
+import { expect, test } from "bun:test";
 import { createHTTPV } from "../src/index.ts";
-import { bridgeMatches } from "../src/compatibility.ts";
-import type { Certificate, Requirements } from "../src/index.ts";
-import {
-  advertise,
-  inventoryAxioms,
-  operation,
-  requirements,
-  snapshot,
-  testAuthority,
-} from "./helpers.ts";
+import type { Certificate, Requirement, Requirements } from "../src/index.ts";
+import { advertise, axioms, id, inventory, operation } from "./helpers.ts";
 
-const authority = testAuthority();
-const httpv = createHTTPV({ backend: authority.backend });
-const fixtures: Record<string, Certificate> = {};
-let required: Requirements;
-
-beforeAll(async () => {
-  for (const name of [
-    "v1",
-    "v2",
-    "v3",
-    "bridge",
-    "independent",
-    "changed-definition",
-    "renamed-operation",
-    "weakened-claim",
-  ])
-    fixtures[name] = await authority.issue(name);
-  required = await requirements();
-});
+const fixtures = inventory();
+const httpv = createHTTPV({ backend: fixtures.authority.backend });
 
 const compare = (
-  remote: string,
-  overrides: Partial<Parameters<typeof httpv.compare>[1]> & {
-    as?: string;
-  } = {},
+  remote: Certificate,
+  overrides: Partial<Requirement> & { as?: string } = {},
 ) =>
-  httpv.compare(advertise(fixtures[remote]!, overrides.as), {
+  httpv.compare(advertise(remote, overrides.as), {
     operation,
-    requirements: snapshot(fixtures.v1!),
-    allowedAxioms: inventoryAxioms,
+    requirements: fixtures.exact,
+    axioms,
     ...overrides,
   });
 
-test("an upgrade that adds claims keeps an exact match", async () => {
-  for (const remote of ["v1", "v2"])
+test("an upgrade that adds claims and definitions keeps an exact match", async () => {
+  for (const remote of [fixtures.v1, fixtures.v2])
     expect(await compare(remote)).toMatchObject({
       status: "verified",
       reason: "exact-match",
     });
 });
 
-test("a redefined operation is incompatible even with an identical theorem name", async () => {
-  for (const remote of ["v3", "changed-definition"]) {
-    expect(await compare(remote)).toMatchObject({
-      status: "incompatible",
-      reason: "operation-mismatch",
-    });
-    expect(
-      await compare(remote, {
-        requirements: required,
-        bridge: fixtures.bridge!,
-      }),
-    ).toMatchObject({ status: "incompatible", reason: "operation-mismatch" });
-  }
+test("a redefined operation is incompatible, and no bridge can fix that", async () => {
+  expect(await compare(fixtures.v3)).toMatchObject({
+    status: "incompatible",
+    reason: "operation-mismatch",
+  });
+  expect(
+    await compare(fixtures.v3, {
+      requirements: fixtures.client,
+      bridge: fixtures.independent,
+    }),
+  ).toMatchObject({ status: "incompatible", reason: "operation-mismatch" });
 });
 
 test("the advertised entrypoint must be the expected operation", async () => {
-  expect(await compare("v1", { as: "Nat.sub" })).toMatchObject({
-    status: "incompatible",
-    reason: "operation-mismatch",
-    advertisedOperation: "Nat.sub",
-  });
+  expect(await compare(fixtures.v2, { as: "Inventory.restock" })).toMatchObject(
+    {
+      status: "incompatible",
+      reason: "operation-mismatch",
+      advertisedOperation: "Inventory.restock",
+    },
+  );
   expect(
-    await compare("renamed-operation", {
+    await compare(fixtures.renamed, {
       as: "Backorders.POST_reservations",
-      requirements: required,
-      bridge: fixtures.independent!,
+      requirements: fixtures.client,
+      bridge: fixtures.independent,
     }),
   ).toMatchObject({ status: "incompatible", reason: "operation-mismatch" });
-  for (const name of ["", "Missing.operation"])
-    expect(
-      await compare("v1", { as: name || operation, operation: name }),
-    ).toMatchObject({ status: "unknown", reason: "invalid-requirements" });
+  expect(
+    await compare(fixtures.v1, { operation: "Missing.operation" }),
+  ).toMatchObject({ status: "unknown", reason: "invalid-requirements" });
 });
 
 test("a verified bridge establishes a weaker requirement", async () => {
-  expect(await compare("v1", { requirements: required })).toMatchObject({
-    status: "incompatible",
-    reason: "requirements-not-met",
-  });
+  expect(
+    await compare(fixtures.v1, { requirements: fixtures.client }),
+  ).toMatchObject({ status: "incompatible", reason: "requirements-not-met" });
   for (const [remote, bridge] of [
-    ["v1", "bridge"],
-    ["v2", "bridge"],
-    ["v1", "independent"],
+    [fixtures.v1, fixtures.bridge],
+    [fixtures.v2, fixtures.bridge],
+    [fixtures.v1, fixtures.independent],
   ])
     expect(
       await compare(remote!, {
-        requirements: required,
-        bridge: fixtures[bridge!]!,
+        requirements: fixtures.client,
+        bridge: bridge!,
       }),
     ).toMatchObject({ status: "verified", reason: "bridge" });
+});
+
+test("a bridge fails if it proves something else or assumes more than it may", async () => {
+  const invalid = { status: "unknown", reason: "invalid-bridge" };
+  // Proves the wrong claims.
   expect(
-    await compare("v1", { requirements: required, bridge: fixtures.v1! }),
-  ).toMatchObject({ status: "unknown", reason: "invalid-bridge" });
+    await compare(fixtures.v1, {
+      requirements: fixtures.client,
+      bridge: fixtures.v1,
+    }),
+  ).toMatchObject(invalid);
+  // Assumes a remote claim that the remote weakened under the same name.
+  expect(
+    await compare(fixtures.weakened, {
+      requirements: fixtures.client,
+      bridge: fixtures.bridge,
+    }),
+  ).toMatchObject(invalid);
+  // A client axiom and a remote claim with one name but different meanings.
+  expect(
+    await compare(fixtures.v1, {
+      requirements: fixtures.client,
+      bridge: fixtures.bridge,
+      axioms: { ...axioms, "Inventory.reservation_safe": id("other") },
+    }),
+  ).toMatchObject({ ...invalid, detail: expect.stringContaining("share") });
 });
 
 test("certificate failures are unknown", async () => {
-  expect(await compare("v1", { allowedAxioms: [] })).toMatchObject({
+  expect(await compare(fixtures.v1, { axioms: {} })).toMatchObject({
     status: "unknown",
     reason: "forbidden-axiom",
   });
-  const tampered = { ...fixtures.v1!, specs: fixtures.v3!.specs };
   expect(
-    await httpv.compare(advertise(tampered), {
-      operation,
-      requirements: snapshot(fixtures.v1!),
-      allowedAxioms: inventoryAxioms,
-    }),
-  ).toMatchObject({ status: "unknown", reason: "invalid-certificate" });
+    await compare(fixtures.v1, { axioms: { propext: id("not propext") } }),
+  ).toMatchObject({ status: "unknown", reason: "axiom-mismatch" });
+  const tampered = {
+    ...fixtures.v1,
+    claims: { "Inventory.reservation_safe": id("forged") },
+  };
+  expect(await compare(tampered)).toMatchObject({
+    status: "unknown",
+    reason: "invalid-certificate",
+  });
 });
 
 test("unusable requirements fail closed", async () => {
   const directory = await mkdtemp(join(tmpdir(), "httpv-"));
   const path = join(directory, "requirements.json");
   try {
-    await Bun.write(path, JSON.stringify(snapshot(fixtures.v1!)));
-    expect((await compare("v1", { requirements: path })).status).toBe(
+    await Bun.write(path, JSON.stringify(fixtures.exact));
+    expect((await compare(fixtures.v1, { requirements: path })).status).toBe(
       "verified",
     );
     for (const requirements of [
       join(directory, "missing.json"),
-      { ...snapshot(fixtures.v1!), extra: true },
+      { ...fixtures.exact, extra: true },
     ])
       expect(
-        await compare("v1", { requirements: requirements as Requirements }),
+        await compare(fixtures.v1, {
+          requirements: requirements as Requirements,
+        }),
       ).toMatchObject({ status: "unknown", reason: "invalid-requirements" });
   } finally {
     await rm(directory, { recursive: true });
@@ -146,34 +145,12 @@ test("unusable requirements fail closed", async () => {
 });
 
 test("mutating the inputs during verification cannot change what is compared", async () => {
-  const supplied = advertise(structuredClone(fixtures.v3!));
+  const supplied = advertise(structuredClone(fixtures.v3));
   const pending = httpv.compare(supplied, {
     operation,
-    requirements: snapshot(fixtures.v1!),
-    allowedAxioms: inventoryAxioms,
+    requirements: fixtures.exact,
+    axioms,
   });
-  (supplied.certificate as { specs: unknown }).specs = fixtures.v1!.specs;
+  Object.assign(supplied.certificate, structuredClone(fixtures.v1));
   expect(await pending).toMatchObject({ status: "incompatible" });
-});
-
-test("a bridge cannot share a name with a different remote definition", () => {
-  expect(
-    bridgeMatches(fixtures.v1!, required.specs, fixtures.independent!),
-  ).toBe(true);
-  expect(
-    bridgeMatches(
-      fixtures["changed-definition"]!,
-      required.specs,
-      fixtures.independent!,
-    ),
-  ).toBe(false);
-});
-
-test("a bridge stops holding when the remote claim it assumes is weakened", async () => {
-  expect(
-    await compare("weakened-claim", {
-      requirements: required,
-      bridge: fixtures.bridge!,
-    }),
-  ).toMatchObject({ status: "unknown", reason: "invalid-bridge" });
 });

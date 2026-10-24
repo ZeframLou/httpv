@@ -1,58 +1,38 @@
-import { readModel } from "zklean/encoding";
-import { contextMatches, publicContext } from "zklean";
-import type { Certificate, Specs } from "zklean";
-import type { Advertisement } from "./types.ts";
+import type { Certificate, Requirements } from "zklean";
 
-/** Whether `operation` is the advertised entrypoint and means the same thing
- * locally and remotely. Bridges cannot supply or redefine an operation. */
-export function operationMatches(
-  remote: Advertisement,
-  requirements: Specs,
+type Identities = Readonly<Record<string, string>>;
+
+/** Every wanted name is present with the same identity. Identities are closure
+ * hashes that bind constant names, so equal ids mean equal meaning. */
+export function includes(have: Identities, want: Identities): boolean {
+  return Object.entries(want).every(
+    ([name, id]) => Object.hasOwn(have, name) && have[name] === id,
+  );
+}
+
+/** The advertised entrypoint is the expected one, and every definition the
+ * requirements fix, the operation included, is certified unchanged. */
+export function definitionsMatch(
+  remote: Certificate,
+  advertised: string,
+  requirements: Requirements,
   operation: string,
 ): boolean {
-  const required = publicContext(readModel(requirements), requirements.claims);
   return (
-    remote.operation === operation &&
-    contextMatches(
-      publicContext(
-        readModel(remote.certificate.specs),
-        remote.certificate.specs.claims,
-      ),
-      publicContext(required, [operation]),
-    )
+    advertised === operation &&
+    includes(remote.definitions, requirements.definitions)
   );
 }
 
-/** Every required claim is certified with an identical resolved context.
- * Binder names and annotations are ignored; extra remote claims are allowed. */
-export function exactMatch(remote: Certificate, requirements: Specs): boolean {
-  return (
-    requirements.claims.every((name) => remote.specs.claims.includes(name)) &&
-    contextMatches(
-      readModel(remote.specs),
-      publicContext(readModel(requirements), requirements.claims),
-    )
-  );
-}
-
-/** A bridge proves the required claims, and every declaration it shares with
- * the remote model agrees, so it cannot reinterpret a remote name. */
-export function bridgeMatches(
+/** A bridge may assume the client's axioms and the remote's certified claims.
+ * A name in both with different identities would be ambiguous, so it is refused. */
+export function bridgePolicy(
+  axioms: Identities,
   remote: Certificate,
-  requirements: Specs,
-  bridge: Certificate,
-): boolean {
-  const model = readModel(bridge.specs);
-  const remoteModel = readModel(remote.specs);
-  const shared = Object.keys(remoteModel.declarations).filter((name) =>
-    Object.hasOwn(model.declarations, name),
+): Identities | undefined {
+  const shared = Object.keys(remote.claims).filter((name) =>
+    Object.hasOwn(axioms, name),
   );
-  return (
-    requirements.claims.every((name) => bridge.specs.claims.includes(name)) &&
-    contextMatches(
-      model,
-      publicContext(readModel(requirements), requirements.claims),
-    ) &&
-    contextMatches(model, publicContext(remoteModel, shared))
-  );
+  if (shared.some((name) => axioms[name] !== remote.claims[name])) return;
+  return { ...axioms, ...remote.claims };
 }

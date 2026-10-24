@@ -23,8 +23,11 @@ bun run example
 ## Serve a certificate
 
 Generate the API's certificate with [ZKLean](https://github.com/ZeframLou/zklean-dist)
-before deployment. Its Lean model must describe the operation, inputs, and
-resource it covers.
+before deployment. A certificate is a few hundred bytes: the names of the
+proved claims, the definitions they are about, and the axioms they use, each
+with an **identity** (a hash of the declaration and everything it refers to),
+plus a 260-byte proof. Publish the Lean sources too, so clients can review what
+the identities mean.
 
 Wrap your existing Fetch handler:
 
@@ -51,10 +54,9 @@ Bun.serve({
 HTTPV answers `OPTIONS` requests that accept `application/httpv+json`; every
 other request goes to your handler. Serving needs no verifier.
 
-Each route binds an `operation`, the Lean declaration that defines the
-endpoint's behavior, to a certificate. The operation must be part of what the
-certified claims depend on; `serve` rejects it at startup otherwise. Paths match
-exactly.
+Each route binds an `operation`, the Lean definition of the endpoint's
+behavior, to a certificate. The operation must be one of the certificate's
+`definitions`; `serve` rejects it at startup otherwise. Paths match exactly.
 
 To change the certificate without restarting, pass a function instead. It runs
 on every discovery request and returns both fields together:
@@ -87,33 +89,36 @@ entire certificate.
 
 ## Choose your requirements
 
-Your **requirements** are a local snapshot of the Lean statements and
-definitions your client's proof assumes about the API. Keep them under your
-control: accepting whatever the server advertises would defeat the check.
+Your **requirements** are the claims your client's proof assumes about the API
+and the definitions they are about, by name and identity:
 
-To require exactly what a reviewed certificate states, write its snapshot once
-and commit it:
-
-```ts
-import { parseCertificate, requirementsFor } from "zklean";
-
-const approved = parseCertificate(
-  await Bun.file("./contracts/approved.json").json(),
-);
-await Bun.write(
-  "./specs/requirements.json",
-  JSON.stringify(requirementsFor(approved.specs)),
-);
+```json
+{
+  "format": "zklean/requirements/1",
+  "claims": { "Inventory.reservation_safe": "56b0…" },
+  "definitions": { "Inventory.POST_reservations": "9f2c…" }
+}
 ```
 
-You can also generate a snapshot from your own Lean declarations with
-[`zklean requirements`](https://github.com/ZeframLou/zklean-dist/blob/main/docs/USAGE.md).
+Generate them from Lean source you have reviewed, either the API's published
+sources or your own statements of what you need, and commit the file:
+
+```sh
+zklean requirements --claims Inventory.reservation_safe \
+  --definitions Inventory.POST_reservations --out specs/requirements.json
+```
+
+Statements can be `axiom`s: an identity covers what a declaration states, not
+how it is proved, so an axiom matches a theorem with the same statement. Keep
+requirements under your control; copying whatever the server advertises would
+defeat the check.
 
 ## Check an API before using it
 
 Describe the dependency once, then check it:
 
 ```ts
+import { standardAxioms } from "zklean";
 import { httpv } from "./httpv.ts";
 
 const inventory = {
@@ -121,7 +126,7 @@ const inventory = {
   method: "POST",
   operation: "Inventory.POST_reservations",
   requirements: "./specs/requirements.json",
-  allowedAxioms: ["propext"],
+  axioms: { propext: standardAxioms.propext },
 };
 
 const result = await httpv.check(inventory);
@@ -130,8 +135,8 @@ if (result.status !== "verified")
 ```
 
 `check` fetches the advertisement, verifies the certificate, confirms the
-advertised operation is the one you expect with the same definition, and
-compares the certificate with your requirements. It never throws.
+advertised operation is the one you expect, and compares identities with your
+requirements. It never throws.
 
 | Status         | Meaning                                                          | Reasons                                       |
 | -------------- | ---------------------------------------------------------------- | --------------------------------------------- |
@@ -139,16 +144,18 @@ compares the certificate with your requirements. It never throws.
 | `incompatible` | The certificate is valid but does not establish your requirements. | `operation-mismatch`, `requirements-not-met` |
 | `unknown`      | Nothing could be established.                                    | Discovery, certificate, bridge or configuration failures |
 
-An exact match requires every required statement, and everything it depends
-on, to be certified with identical definitions. Bound-variable names may differ
-and the server may certify extra statements. A matching theorem name alone is
-not enough: if the API redefines `Inventory.POST_reservations`, the result is
-`incompatible / operation-mismatch`.
+Every required definition, the operation included, must be certified with the
+same identity; otherwise the result is `incompatible / operation-mismatch`. An
+exact match also needs every required claim certified with the same identity.
+The server may certify extra claims and definitions. Because identities hash
+names as well as content, a matching theorem name with a changed statement, or
+a redefined operation, never matches.
 
-`allowedAxioms` lists the unproved assumptions you accept. `["propext"]` permits
-the axiom Lean's arithmetic lemmas use; `[]` accepts only certificates with
-none. A custom axiom also needs its reviewed fingerprint in `axiomPins`;
-otherwise the result is `unknown / unpinned-axiom`.
+`axioms` lists the unproved assumptions you accept, by name and identity.
+`standardAxioms` from ZKLean holds Lean's `propext`, `Quot.sound`, and
+`Classical.choice`; `{}` accepts only certificates that use none. A certificate
+using an axiom you did not list is `unknown / forbidden-axiom`, and one whose
+axiom has a different identity is `unknown / axiom-mismatch`.
 
 For lower-level control, `httpv.query(url, { method })` returns the
 advertisement, throwing a `DiscoveryError` if discovery fails, and
@@ -176,9 +183,10 @@ theorem Client.stock_conserved (available requested remaining : Nat) :
   exact (Inventory.reservation_safe available requested remaining accepted).2.2
 ```
 
-Follow ZKLean's [import and bridge guide](https://github.com/ZeframLou/zklean-dist/blob/main/docs/USAGE.md)
-to import the API's public model as `Remote.lean` and certify this proof. Then
-add the bridge to the dependency:
+Here `Remote` is the API's published Lean source, with
+`Inventory.reservation_safe` stated as an `axiom` so the bridge assumes it rather
+than reproving it. Certify the proof with ZKLean, then add the bridge to the
+dependency:
 
 ```ts
 const result = await httpv.check({
@@ -187,11 +195,11 @@ const result = await httpv.check({
 });
 ```
 
-HTTPV tries an exact match first, then the bridge. It verifies the bridge
-independently and accepts it only if it assumes nothing beyond the API's
-verified claims and your `allowedAxioms`, and every definition it shares with
-the API is identical. A bridge cannot change which operation the endpoint is.
-A renamed or redefined operation needs new, reviewed requirements.
+HTTPV tries an exact match first, then the bridge. It verifies the bridge with
+a policy of your `axioms` plus the API's certified claims, so the bridge may
+assume only those, with the same identities, and it must prove every required
+claim. A bridge cannot change the required definitions: a renamed or redefined
+operation needs new, reviewed requirements.
 
 ## Monitor updates
 

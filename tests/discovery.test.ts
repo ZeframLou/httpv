@@ -1,16 +1,10 @@
-import { beforeAll, expect, test } from "bun:test";
+import { expect, test } from "bun:test";
 import { createHTTPV, MEDIA_TYPE, serve } from "../src/index.ts";
 import { methodName } from "../src/protocol.ts";
-import type { Certificate } from "../src/index.ts";
-import { advertise, listen, testAuthority } from "./helpers.ts";
+import { advertise, inventory, listen } from "./helpers.ts";
 
 const local = { method: "POST", allowInsecureHttp: true };
-let v1: Certificate, v3: Certificate;
-
-beforeAll(async () => {
-  const authority = testAuthority();
-  [v1, v3] = await Promise.all([authority.issue("v1"), authority.issue("v3")]);
-});
+const { v1, v3 } = inventory();
 
 function respond(body: unknown, init: ResponseInit = {}) {
   return createHTTPV({
@@ -51,7 +45,7 @@ test("providers run per request, so the certificate and entrypoint change togeth
   using app = listen(() => current);
   const httpv = createHTTPV();
   expect(await httpv.query(app.url, local)).toEqual(advertise(v1));
-  current = advertise(v3, "Inventory.reservation_safe");
+  current = advertise(v3);
   expect(await httpv.query(app.url, local)).toEqual(current);
   current = advertise(v1, "Missing.operation");
   expect(
@@ -72,7 +66,7 @@ test("routes are validated at startup", () => {
     ).toThrow();
   expect(() =>
     serve({ routes: { "POST /a": advertise(v1, "Missing.operation") }, fetch }),
-  ).toThrow("outside the certified claim context");
+  ).toThrow("not a certified definition");
   expect(() =>
     serve({
       routes: { "POST /a": advertise(v1), "post /a": advertise(v1) },

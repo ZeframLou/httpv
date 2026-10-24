@@ -79,7 +79,7 @@ jobs:
           cargo build --release --locked -p zklean-native
           bash scripts/setup-exporter.sh
           bun run compile
-      - name: Check Lean source drift and real certificates
+      - name: Check the example certificates against their Lean sources
         env:
           ZKLEAN_READ_TOKEN: ${{ secrets.ZKLEAN_READ_TOKEN }}
         run: |
@@ -89,6 +89,4 @@ jobs:
           export ZKLEAN_NATIVE="$PWD/.tooling/zklean/target/release/zklean-native"
           export ZKLEAN_EXPORTER="$PWD/.tooling/zklean/.tooling/lean4export/.lake/build/bin/lean4export"
           export ZKLEAN_LAKE="$(command -v lake)"
-          bun run fixtures
-          git diff --exit-code -- tests/fixtures examples/inventory/certificates
-          bun scripts/check-certificates.ts
+          bun run check:certificates

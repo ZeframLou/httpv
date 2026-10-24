@@ -1,103 +1,98 @@
-/** Every Lean model the repository checks, and where its artifacts live. */
+/** The example's Lean modules and the artifacts generated from them. */
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { runZKLean } from "./zklean.ts";
+
+export const project = "examples/inventory";
+const out = (name: string) => `${project}/certificates/${name}.json`;
+const operation = "UnitInventory.POST_units";
+
+/** The bridge assumes V1's claim; this file pins it to V1's identity. */
+export const bridgePolicy = `${project}/axioms.json`;
+
 export interface Model {
-  project: string;
   module: string;
   claims: string[];
+  definitions: string[];
   axioms: string[];
-  policy: string;
-  /** Checked public model, or the requirements snapshot when `requirements`. */
   out: string;
-  requirements?: true;
-  /** Real Groth16 certificate proving this model. */
-  certificate?: string;
 }
 
-/** Edge cases for the policy tests, which sign their checked models. */
-const fixture = (
-  module: string,
-  name: string,
-  claims: string[],
-  axioms: string[] = [],
-): Model => ({
-  project: "tests/fixtures/lean",
-  policy: "tests/fixtures/lean/axioms.json",
-  module,
-  claims,
-  axioms,
-  out: `tests/fixtures/${name}.statement.json`,
-});
-
-/** The runnable example, with real certificates. */
-const example = (
-  module: string,
-  name: string,
-  claims: string[],
-  axioms: string[] = [],
-): Model => ({
-  project: "examples/inventory",
-  policy: "examples/inventory/axioms.json",
-  module,
-  claims,
-  axioms,
-  out: `tests/fixtures/unit/${name}.statement.json`,
-  certificate: `examples/inventory/certificates/${name}.json`,
-});
-
-export const models: Model[] = [
-  fixture("V1", "v1", ["Inventory.reservation_safe"], ["propext"]),
-  fixture(
-    "V2",
-    "v2",
-    ["Inventory.reservation_safe", "Inventory.valid_request_succeeds"],
-    ["propext"],
-  ),
-  fixture("V3", "v3", ["Inventory.reservation_safe"]),
-  fixture(
-    "Bridge",
-    "bridge",
-    ["Client.stock_conserved"],
-    ["Inventory.reservation_safe"],
-  ),
-  fixture(
-    "Independent",
-    "independent",
-    ["Client.stock_conserved"],
-    ["propext"],
-  ),
-  fixture("ChangedDefinition", "changed-definition", [
-    "Inventory.reservation_safe",
-  ]),
-  fixture("RenamedOperation", "renamed-operation", [
-    "Backorders.reservation_safe",
-  ]),
-  fixture(
-    "WeakenedClaim",
-    "weakened-claim",
-    ["Inventory.reservation_safe"],
-    ["propext"],
-  ),
+export const certificates: Model[] = [
   {
-    ...fixture("Requirements", "requirements", ["Client.stock_conserved"]),
-    out: "tests/fixtures/requirements.json",
-    requirements: true,
+    module: "V1",
+    claims: ["UnitInventory.conserves"],
+    definitions: [operation],
+    axioms: [],
+    out: out("v1"),
   },
-  example("V1", "v1", ["UnitInventory.conserves"]),
-  example("V2", "v2", [
-    "UnitInventory.available_succeeds",
-    "UnitInventory.conserves",
-  ]),
-  example("V3", "v3", ["UnitInventory.conserves"]),
-  example(
-    "Bridge",
-    "bridge",
-    ["UnitClient.nonempty"],
-    ["UnitInventory.conserves"],
-  ),
   {
-    ...fixture("Requirements", "requirements", ["UnitClient.nonempty"]),
-    project: "examples/inventory",
-    policy: "examples/inventory/axioms.json",
-    out: "examples/inventory/certificates/requirements.json",
-    requirements: true,
+    module: "V2",
+    claims: ["UnitInventory.available_succeeds", "UnitInventory.conserves"],
+    definitions: [operation],
+    axioms: [],
+    out: out("v2"),
+  },
+  {
+    module: "V3",
+    claims: ["UnitInventory.conserves"],
+    definitions: [operation],
+    axioms: [],
+    out: out("v3"),
+  },
+  {
+    module: "Bridge",
+    claims: ["UnitClient.nonempty"],
+    definitions: [],
+    axioms: ["UnitInventory.conserves"],
+    out: out("bridge"),
   },
 ];
+
+export const requirements: Omit<Model, "axioms"> = {
+  module: "Requirements",
+  claims: ["UnitClient.nonempty"],
+  definitions: [operation],
+  out: out("requirements"),
+};
+
+/** Flags shared by every source command. */
+export function source(model: Omit<Model, "axioms" | "out">): string[] {
+  return [
+    "--project",
+    project,
+    "--module",
+    model.module,
+    "--claims",
+    model.claims.join(","),
+    ...(model.definitions.length
+      ? ["--definitions", model.definitions.join(",")]
+      : []),
+  ];
+}
+
+export function axiomFlags(model: Model): string[] {
+  return model.axioms.length
+    ? ["--axioms", model.axioms.join(","), "--axiom-policy", bridgePolicy]
+    : [];
+}
+
+/** Run a requirements command and return its JSON output. */
+export async function generateRequirements(
+  model: Omit<Model, "axioms" | "out">,
+): Promise<{ claims: Record<string, string> }> {
+  const directory = await mkdtemp(join(tmpdir(), "httpv-requirements-"));
+  try {
+    const path = join(directory, "requirements.json");
+    await runZKLean(["requirements", ...source(model), "--out", path]);
+    return await Bun.file(path).json();
+  } finally {
+    await rm(directory, { recursive: true });
+  }
+}
+
+/** The identity of V1's claim, as the bridge's axiom policy. */
+export async function expectedBridgePolicy(): Promise<Record<string, string>> {
+  return (await generateRequirements(certificates[0]!)).claims;
+}

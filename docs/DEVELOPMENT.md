@@ -23,14 +23,12 @@ no Rust, SP1, or Lean toolchain is needed to run the tests or the example.
 | ----------------------- | ------------------------------------------------------------ |
 | `src/`                  | The library: protocol, server, client, compatibility rules.  |
 | `examples/upgrades.ts`  | The runnable example.                                        |
-| `examples/inventory/`   | Its Lean project and real Groth16 certificates.              |
-| `tests/fixtures/lean/`  | Lean models for policy edge cases.                           |
-| `tests/fixtures/`       | Checked public models of every Lean project.                 |
-| `scripts/models.ts`     | Every model, with its claims, axioms, and output paths.      |
+| `examples/inventory/`   | Its Lean project, requirements and real Groth16 certificates. |
+| `scripts/models.ts`     | Each module's claims, definitions, axioms and output path.   |
 
-Most tests sign checked models with a test-only Ed25519 backend, so they run in
-seconds. `tests/groth16.test.ts` uses the real certificates and the default
-verifier.
+Most tests build certificates from made-up identities and sign them with a
+test-only Ed25519 backend, so they run in milliseconds. `tests/groth16.test.ts`
+uses the real certificates and the default verifier.
 
 ## Regenerate artifacts
 
@@ -38,12 +36,11 @@ These steps need the [ZKLean CLI](https://github.com/ZeframLou/zklean); set
 `ZKLEAN_CLI` if it is not on `PATH`.
 
 ```sh
-bun run fixtures            # re-check every Lean model
-bun run check:certificates  # each certificate proves its checked model
+bun run check:certificates  # every artifact matches its re-checked source
 ```
 
-`bun run prove` regenerates the example certificates in place; review the diff
-before committing. Each proof takes about two hours and peaks near 13 GiB of
+`bun run prove` regenerates the requirements, the bridge's axiom policy and
+the certificates in place; review the diff before committing. Each proof takes about two hours and peaks near 13 GiB of
 memory on a four-CPU machine. To bound it:
 
 ```sh
@@ -51,17 +48,16 @@ RAYON_NUM_THREADS=4 GOMAXPROCS=2 GOMEMLIMIT=6GiB GOGC=20 \
 ZKLEAN_PROVE_TIMEOUT=86400000 bun run prove
 ```
 
-The axiom pins in each project's `axioms.json` fingerprint reviewed assumptions.
-When the sources change, review and update them yourself; never accept pins
-supplied by a certificate's producer.
+`examples/inventory/axioms.json` pins the bridge's assumption to the identity
+of V1's claim, as computed from source. Never take it from a certificate's
+producer.
 
 ## Continuous integration
 
 Set the `ZKLEAN_READ_TOKEN` Actions secret to a read-only token with Contents
 access to `ZeframLou/zklean`. CI checks formatting, types, and tests, and runs
 the example from npm tarballs with native tools unavailable. A second job
-builds the pinned CLI, re-checks every Lean model, fails on fixture drift, and
-verifies the committed certificates.
+builds the pinned CLI and runs `bun run check:certificates`.
 
 ## Check unpublished packages
 

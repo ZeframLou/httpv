@@ -38,7 +38,7 @@ const monitor = createHTTPV().watch(
     operation,
     requirements,
     bridge,
-    allowedAxioms: [],
+    axioms: {},
   },
   { interval: 60_000 },
 );

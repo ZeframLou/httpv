@@ -1,5 +1,4 @@
-import { object, parseCertificate, readModel } from "zklean/encoding";
-import { publicContext } from "zklean";
+import { object, parseCertificate } from "zklean/encoding";
 import type { Advertisement } from "./types.ts";
 
 export const MEDIA_TYPE = "application/httpv+json";
@@ -38,18 +37,14 @@ function exactFields(
   return data;
 }
 
-/** The entrypoint must be a declaration the certified claims depend on. */
+/** The entrypoint must be one of the certificate's identified definitions. */
 export function parseAdvertisement(value: unknown): Advertisement {
   const data = exactFields(value, ["certificate", "operation"]);
   if (typeof data.operation !== "string" || !data.operation)
     throw new Error("operation must be a nonempty string");
   const certificate = parseCertificate(data.certificate);
-  const context = publicContext(
-    readModel(certificate.specs),
-    certificate.specs.claims,
-  );
-  if (!Object.hasOwn(context.declarations, data.operation))
-    throw new Error("operation is outside the certified claim context");
+  if (!Object.hasOwn(certificate.definitions, data.operation))
+    throw new Error("operation is not a certified definition");
   return { operation: data.operation, certificate };
 }
 

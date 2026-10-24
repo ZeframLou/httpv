@@ -1,42 +1,34 @@
 import { expect, test } from "bun:test";
 import { createHTTPV, MEDIA_TYPE } from "../src/index.ts";
 import type { Result } from "../src/index.ts";
-import {
-  advertise,
-  inventoryAxioms,
-  listen,
-  operation,
-  snapshot,
-  testAuthority,
-} from "./helpers.ts";
+import { advertise, axioms, inventory, listen, operation } from "./helpers.ts";
 
-async function setup() {
-  const authority = testAuthority();
-  const [v1, v2, v3] = await Promise.all(
-    ["v1", "v2", "v3"].map((name) => authority.issue(name)),
-  );
-  let current = advertise(v1!);
+function setup() {
+  const fixtures = inventory();
+  const versions = [fixtures.v1, fixtures.v2, fixtures.v3];
+  let current = advertise(fixtures.v1);
   const app = listen(() => current);
   const dependency = {
     url: app.url,
     method: "POST",
     allowInsecureHttp: true,
     operation,
-    requirements: snapshot(v1!),
-    allowedAxioms: inventoryAxioms,
+    requirements: fixtures.exact,
+    axioms,
   };
   return {
-    authority,
+    authority: fixtures.authority,
+    v1: fixtures.v1,
     app,
     dependency,
     serveVersion(index: number, name = operation) {
-      current = advertise([v1, v2, v3][index]!, name);
+      current = advertise(versions[index]!, name);
     },
   };
 }
 
 test("requireVerified follows the current contract and stops with the monitor", async () => {
-  const { authority, app, dependency, serveVersion } = await setup();
+  const { authority, app, dependency, serveVersion } = setup();
   using _ = app;
   const changes: Result[] = [];
   const monitor = createHTTPV({ backend: authority.backend }).watch(
@@ -70,7 +62,7 @@ test("requireVerified follows the current contract and stops with the monitor", 
 });
 
 test("a verified result expires while a later check stalls, and the stalled check times out", async () => {
-  const { authority, app, dependency, serveVersion } = await setup();
+  const { authority, app, dependency, serveVersion } = setup();
   using _ = app;
   let release!: () => void;
   const stall = new Promise<void>((resolve) => (release = resolve));
@@ -103,8 +95,8 @@ test("a verified result expires while a later check stalls, and the stalled chec
 });
 
 test("polling reports an unavailable dependency and stops on an external signal", async () => {
-  const { authority, dependency } = await setup();
-  const v1 = await authority.issue("v1");
+  const { authority, dependency, v1, app } = setup();
+  app[Symbol.dispose]();
   let calls = 0;
   const client = createHTTPV({
     backend: authority.backend,
@@ -140,7 +132,7 @@ test("polling reports an unavailable dependency and stops on an external signal"
 });
 
 test("expiry is notified, and so is recovery with the same certificate", async () => {
-  const { authority, app, dependency } = await setup();
+  const { authority, app, dependency } = setup();
   using _ = app;
   const reasons: string[] = [];
   const monitor = createHTTPV({ backend: authority.backend }).watch(
@@ -162,10 +154,10 @@ test("expiry is notified, and so is recovery with the same certificate", async (
 });
 
 test("a change of advertised operation alone is notified", async () => {
-  const { authority, app, dependency, serveVersion } = await setup();
+  const { authority, app, dependency, serveVersion } = setup();
   using _ = app;
   const operations: (string | undefined)[] = [];
-  serveVersion(0, "Nat.sub");
+  serveVersion(1, "Inventory.restock");
   const monitor = createHTTPV({ backend: authority.backend }).watch(
     dependency,
     {
@@ -175,16 +167,16 @@ test("a change of advertised operation alone is notified", async () => {
   );
   try {
     await monitor.refresh();
-    serveVersion(0, "Inventory.reservation_safe");
+    serveVersion(1, "Inventory.audit");
     expect((await monitor.refresh()).reason).toBe("operation-mismatch");
-    expect(operations).toEqual(["Nat.sub", "Inventory.reservation_safe"]);
+    expect(operations).toEqual(["Inventory.restock", "Inventory.audit"]);
   } finally {
     monitor.stop();
   }
 });
 
 test("a check that blocks past its timeout is discarded even if it finishes first", async () => {
-  const { authority, app, dependency } = await setup();
+  const { authority, app, dependency } = setup();
   using _ = app;
   const monitor = createHTTPV({
     backend: {
@@ -206,7 +198,7 @@ test("a check that blocks past its timeout is discarded even if it finishes firs
 });
 
 test("stopping during a check reports stopped", async () => {
-  const { authority, app, dependency } = await setup();
+  const { authority, app, dependency } = setup();
   using _ = app;
   let release!: () => void;
   const stall = new Promise<void>((resolve) => (release = resolve));
@@ -227,7 +219,7 @@ test("stopping during a check reports stopped", async () => {
 });
 
 test("settings must be positive integers", async () => {
-  const { authority, app, dependency } = await setup();
+  const { authority, app, dependency } = setup();
   using _ = app;
   const httpv = createHTTPV({ backend: authority.backend });
   for (const settings of [

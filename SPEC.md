@@ -17,15 +17,18 @@ The key words MUST, MUST NOT, SHOULD, and MAY follow RFC 2119 and RFC 8174.
 ## 2. Terms
 
 - **Specification:** a proposition in Lean 4.
-- **Certificate:** a public Lean model, the claims it certifies, the axioms
-  those claims assume, and a succinct proof.
-- **Operation:** the Lean declaration that defines an endpoint's behavior.
+- **Identity:** ZKLean's hash of a Lean declaration and everything it refers
+  to, binding every constant name and its content. A proposition's identity
+  covers its statement, not its proof.
+- **Certificate:** the identities of the claims it proves, the definitions
+  they are about, and the axioms the proofs use, plus a succinct proof.
+- **Operation:** the Lean definition of an endpoint's behavior.
 - **Advertisement:** an operation name and a certificate for one HTTP method of
   one resource.
-- **Requirements:** the claims, with their resolved definitions, that a
+- **Requirements:** the claims and definitions, by name and identity, that a
   client's proof assumes about an endpoint.
 - **Bridge:** a certificate that proves the requirements while assuming the
-  advertised claims.
+  advertised claims as axioms.
 
 ## 3. Trust model
 
@@ -64,11 +67,9 @@ Vary: Accept
       "operation": "Inventory.POST_reservations",
       "certificate": {
         "format": "zklean/1",
-        "specs": {
-          "declarations": "base64:...",
-          "claims": ["Inventory.reservation_safe"]
-        },
-        "axioms": ["propext"],
+        "claims": { "Inventory.reservation_safe": "56b0…" },
+        "definitions": { "Inventory.POST_reservations": "9f2c…" },
+        "axioms": { "propext": "b75a…" },
         "proof": "base64:..."
       }
     }
@@ -80,11 +81,12 @@ The envelope and each advertisement are closed objects: they MUST contain
 exactly the fields shown, and clients MUST reject anything else. Extensions
 require a new `format`. `contracts` maps HTTP methods to advertisements.
 
-`operation` MUST be nonempty and MUST name a declaration in the public context
-of the certified claims; a declaration used only inside proofs does not count.
-The server MUST describe the behavior of that method and resource with that
-operation, and the model MUST state the inputs it covers. Parameterized routes
-MAY share a certificate when the model covers the whole parameter domain.
+`operation` MUST be nonempty and MUST be one of the certificate's
+`definitions`, which ZKLean only admits when the claims depend on them. The
+server MUST describe the behavior of that method and resource with that
+operation, and the operation MUST state the inputs it covers. Parameterized
+routes MAY share a certificate when the operation covers the whole parameter
+domain.
 
 The response MUST reflect what the server currently advertises. Servers SHOULD
 send `Cache-Control: no-store`. A resource without advertisements returns 404.
@@ -106,18 +108,20 @@ operation in this order:
 1. **Certificate.** Verify the certificate with a client-selected verifier and
    reject axioms outside the client's policy. Discovery MUST NOT select the
    verifier or its keys.
-2. **Operation.** The expected operation MUST occur in the requirements'
-   context, MUST equal the advertised operation, and its full resolved
-   definition MUST match the remote model. A bridge cannot change this outcome.
-3. **Exact match.** Every required claim is certified, and the required
-   claims' entire resolved context matches the remote model. Bound-variable
-   names and binder annotations may differ; constant names, types, and
-   definition bodies may not. Extra remote claims are permitted.
-4. **Bridge.** Otherwise, if the client supplies a bridge: verify it,
-   permitting as axioms only the client's allowed axioms and the remote claims
-   pinned to their full remote context. The bridge MUST certify every required
-   claim with the requirements' context, and every declaration it shares with
-   the remote model MUST be identical.
+2. **Definitions.** The expected operation MUST be one of the required
+   definitions and MUST equal the advertised operation. Every required
+   definition MUST be certified with the same identity. A bridge cannot change
+   this outcome.
+3. **Exact match.** Every required claim is certified with the same identity.
+   Extra remote claims and definitions are permitted.
+4. **Bridge.** Otherwise, if the client supplies a bridge: verify it with an
+   axiom policy of the client's axioms plus the remote claims, rejecting a name
+   that appears in both with different identities. The bridge MUST certify
+   every required claim with the same identity.
+
+Comparison is identity equality. It is sound because identities bind names
+and content of the whole closure: equal identities mean the same statement
+about the same definitions.
 
 Names must therefore stay stable. A renamed or redefined operation requires new,
 reviewed requirements; HTTPV never maps one operation to another.

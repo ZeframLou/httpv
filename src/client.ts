@@ -1,16 +1,6 @@
-import { MAX_CERTIFICATE_BYTES, readModel } from "zklean/encoding";
-import {
-  createVerifier,
-  declarationIdentity,
-  loadRequirements,
-  publicContext,
-} from "zklean";
-import type { Specs } from "zklean";
-import {
-  bridgeMatches,
-  exactMatch,
-  operationMatches,
-} from "./compatibility.ts";
+import { createVerifier, loadRequirements } from "zklean";
+import type { Requirements } from "zklean";
+import { bridgePolicy, definitionsMatch, includes } from "./compatibility.ts";
 import {
   DiscoveryError,
   MEDIA_TYPE,
@@ -28,6 +18,9 @@ import type {
   Result,
   WatchOptions,
 } from "./types.ts";
+
+/** A certificate is a few hundred bytes; an envelope holds one per method. */
+const MAX_DISCOVERY_BYTES = 64 * 1024;
 
 const positiveInteger = (value: unknown): value is number =>
   Number.isSafeInteger(value) && (value as number) > 0;
@@ -57,7 +50,7 @@ async function readText(response: Response, limit: number): Promise<string> {
 export function createHTTPV(options: ClientOptions = {}) {
   const transport = options.fetch ?? fetch;
   const { verify } = createVerifier(options);
-  const maxBytes = options.maxResponseBytes ?? MAX_CERTIFICATE_BYTES;
+  const maxBytes = options.maxResponseBytes ?? MAX_DISCOVERY_BYTES;
   if (!positiveInteger(maxBytes))
     throw new RangeError("invalid maxResponseBytes");
 
@@ -126,22 +119,20 @@ export function createHTTPV(options: ClientOptions = {}) {
       advertisement,
       requirement,
     ]);
-    const { certificate } = advertisement;
-    const { status, reason, ...identity } = await verify(
-      certificate,
-      requirement,
-    );
-    const base = { ...identity, advertisedOperation: advertisement.operation };
+    const { certificate, operation: advertised } = advertisement;
+    const { status, reason, ...identity } = await verify(certificate, {
+      axioms: requirement.axioms,
+    });
+    const base = { ...identity, advertisedOperation: advertised };
     if (status !== "verified")
       return { ...base, status, reason: reason as Reason };
 
-    let specs: Specs;
+    let requirements: Requirements;
     try {
-      specs = (await loadRequirements(requirement.requirements)).specs;
-      const context = publicContext(readModel(specs), specs.claims);
-      if (!Object.hasOwn(context.declarations, requirement.operation))
+      requirements = await loadRequirements(requirement.requirements);
+      if (!Object.hasOwn(requirements.definitions, requirement.operation))
         throw new Error(
-          `${requirement.operation} is outside the requirement claims' context`,
+          `${requirement.operation} is not one of the required definitions`,
         );
     } catch (error) {
       return {
@@ -151,44 +142,39 @@ export function createHTTPV(options: ClientOptions = {}) {
         detail: String(error),
       };
     }
-    if (!operationMatches(advertisement, specs, requirement.operation))
+    if (
+      !definitionsMatch(
+        certificate,
+        advertised,
+        requirements,
+        requirement.operation,
+      )
+    )
       return { ...base, status: "incompatible", reason: "operation-mismatch" };
-    if (exactMatch(certificate, specs))
+    if (includes(certificate.claims, requirements.claims))
       return { ...base, status: "verified", reason: "exact-match" };
-    if (!requirement.bridge)
+    const { bridge } = requirement;
+    if (!bridge)
       return {
         ...base,
         status: "incompatible",
         reason: "requirements-not-met",
       };
 
-    // The bridge may assume the remote claims just verified, pinned to their
-    // exact remote meaning, plus axioms the client permits.
-    const { claims } = certificate.specs;
-    const remoteModel = readModel(certificate.specs);
-    const bridged = await verify(requirement.bridge, {
-      allowedAxioms: [...requirement.allowedAxioms, ...claims],
-      axiomPins: {
-        ...requirement.axiomPins,
-        ...Object.fromEntries(
-          claims.map((name) => [name, declarationIdentity(remoteModel, name)]),
-        ),
-      },
+    const invalid = (detail: string): Result => ({
+      ...base,
+      status: "unknown",
+      reason: "invalid-bridge",
+      detail,
     });
+    const policy = bridgePolicy(requirement.axioms, certificate);
+    if (!policy)
+      return invalid("a client axiom and a remote claim share a name");
+    const bridged = await verify(bridge, { axioms: policy });
     if (bridged.status !== "verified")
-      return {
-        ...base,
-        status: "unknown",
-        reason: "invalid-bridge",
-        detail: bridged.detail ?? bridged.reason,
-      };
-    if (!bridgeMatches(certificate, specs, requirement.bridge))
-      return {
-        ...base,
-        status: "unknown",
-        reason: "invalid-bridge",
-        detail: "bridge context differs from the requirements or remote model",
-      };
+      return invalid(bridged.detail ?? bridged.reason);
+    if (!includes(bridge.claims, requirements.claims))
+      return invalid("bridge does not prove the required claims");
     return { ...base, status: "verified", reason: "bridge" };
   }
 
@@ -246,13 +232,18 @@ export function createHTTPV(options: ClientOptions = {}) {
     };
 
     const notify = (result: Result): void => {
-      const { status, reason, certificateId, modelId, advertisedOperation } =
-        result;
+      const {
+        status,
+        reason,
+        certificateId,
+        statementId,
+        advertisedOperation,
+      } = result;
       const key = JSON.stringify([
         status,
         reason,
         certificateId,
-        modelId,
+        statementId,
         advertisedOperation,
       ]);
       if (key === notified) return;

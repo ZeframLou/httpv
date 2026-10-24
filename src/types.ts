@@ -30,7 +30,7 @@ export interface Result {
   reason: Reason;
   detail?: string;
   certificateId?: string;
-  modelId?: string;
+  statementId?: string;
   /** Entrypoint the server advertised for this endpoint. */
   advertisedOperation?: string;
   /** Set by monitors. */
@@ -44,12 +44,12 @@ export interface Advertisement {
 
 /** What a client's correctness proof assumes about one remote operation. */
 export interface Requirement {
-  /** Expected entrypoint; it must occur in the requirement claims' context. */
+  /** Expected entrypoint; it must be one of the required definitions. */
   operation: string;
   /** A requirements snapshot or the path of its JSON file. */
   requirements: Requirements | string;
-  allowedAxioms: readonly string[];
-  axiomPins?: Readonly<Record<string, string>>;
+  /** Axioms you accept, by name and identity; see zklean's `standardAxioms`. */
+  axioms: Readonly<Record<string, string>>;
   /** Certificate proving the requirements from the remote claims. */
   bridge?: Certificate;
 }

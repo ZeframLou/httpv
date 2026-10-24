@@ -1,26 +1,44 @@
-/** Each committed certificate proves exactly its freshly checked source model. */
+/** Re-check the example's Lean sources and confirm every committed artifact
+ * matches them: requirements, the bridge policy, and each certificate's
+ * statement and proof. */
 import { createVerifier, parseCertificate } from "zklean";
 import { canonical, statement } from "zklean/encoding";
-import { models } from "./models.ts";
+import {
+  axiomFlags,
+  bridgePolicy,
+  certificates,
+  expectedBridgePolicy,
+  generateRequirements,
+  requirements,
+  source,
+} from "./models.ts";
+import { runZKLean } from "./zklean.ts";
+
+function same(path: string, actual: unknown, expected: unknown) {
+  if (canonical(actual) !== canonical(expected))
+    throw new Error(`${path} differs from its Lean source`);
+  console.log(`${path}: matches its source`);
+}
+
+const policy = await Bun.file(bridgePolicy).json();
+same(bridgePolicy, policy, await expectedBridgePolicy());
+same(
+  requirements.out,
+  await Bun.file(requirements.out).json(),
+  await generateRequirements(requirements),
+);
 
 const { verify } = createVerifier();
-for (const model of models) {
-  if (!model.certificate) continue;
-  const certificate = parseCertificate(
-    await Bun.file(model.certificate).json(),
+for (const model of certificates) {
+  const certificate = parseCertificate(await Bun.file(model.out).json());
+  const checked = JSON.parse(
+    await runZKLean(["check", ...source(model), ...axiomFlags(model)]),
   );
-  if (
-    canonical(statement(certificate)) !==
-    canonical(await Bun.file(model.out).json())
-  )
-    throw new Error(
-      `${model.certificate} differs from its checked source model`,
-    );
+  same(model.out, statement(certificate), checked);
   const result = await verify(certificate, {
-    allowedAxioms: model.axioms,
-    axiomPins: await Bun.file(model.policy).json(),
+    axioms: model.axioms.length ? policy : {},
   });
   if (result.status !== "verified")
-    throw new Error(`${model.certificate}: ${JSON.stringify(result)}`);
-  console.log(`${model.certificate}: verified`);
+    throw new Error(`${model.out}: ${JSON.stringify(result)}`);
+  console.log(`${model.out}: proof verified`);
 }

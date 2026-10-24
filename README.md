@@ -48,6 +48,7 @@ endpoint it depends on and gates requests on the latest check:
 
 ```ts
 import { createHTTPV } from "httpv";
+import { standardAxioms } from "zklean";
 
 const monitor = createHTTPV().watch(
   {
@@ -55,7 +56,7 @@ const monitor = createHTTPV().watch(
     method: "POST",
     operation: "Inventory.POST_reservations",
     requirements: "./specs/requirements.json",
-    allowedAxioms: ["propext"],
+    axioms: { propext: standardAxioms.propext },
   },
   { interval: 60_000 },
 );
