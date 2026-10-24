@@ -40,8 +40,14 @@ bun run check:certificates  # every artifact matches its re-checked source
 ```
 
 `bun run prove` regenerates the requirements, the bridge's axiom policy and
-the certificates in place; review the diff before committing. Each proof takes about two hours and peaks near 13 GiB of
-memory on a four-CPU machine. To bound it:
+the certificates in place; review the diff before committing. Prove with
+ZKLean's released guest so the certificates verify under the SDK's pinned key:
+set `ZKLEAN_GUEST_ELF` to the guest program and `ZKLEAN_PROFILE` to its verifier
+profile, and the prover refuses to run if they disagree. The native prover
+needs Go 1.23 or newer.
+
+Each proof takes about two hours and peaks near 13 GiB of memory on a four-CPU
+machine. To bound it:
 
 ```sh
 RAYON_NUM_THREADS=4 GOMAXPROCS=2 GOMEMLIMIT=6GiB GOGC=20 \
