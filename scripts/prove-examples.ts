@@ -1,17 +1,19 @@
 /** Generate the demo's certificates offline with the independently installed CLI. */
-import { examples } from "./export-examples.ts";
+import { inventoryExamples, unitExamples } from "./models.ts";
 import { runZKLean } from "./zklean.ts";
 
 const timeout = process.env.ZKLEAN_PROVE_TIMEOUT;
 
-for (const example of examples.filter((entry) =>
-  ["v1", "v2", "v3", "bridge"].includes(entry.file),
-)) {
+const group = process.argv[2] ?? "inventory";
+if (!["inventory", "unit"].includes(group))
+  throw new Error("usage: bun scripts/prove-examples.ts [inventory|unit]");
+const examples = group === "unit" ? unitExamples : inventoryExamples;
+for (const example of examples.filter((entry) => entry.certificate)) {
   console.log(`Proving ${example.module} locally…`);
   await runZKLean([
     "prove",
     "--project",
-    "examples/lean",
+    example.project,
     "--module",
     example.module,
     "--claims",
@@ -19,20 +21,21 @@ for (const example of examples.filter((entry) =>
     "--axioms",
     example.axioms.join(","),
     "--axiom-policy",
-    "examples/axioms.json",
+    example.policy,
     ...(timeout ? ["--timeout", timeout] : []),
     "--out",
     `examples/generated/${example.file}.json`,
   ]);
 }
+const requirement = examples.find((entry) => entry.requirements)!;
 await runZKLean([
   "requirements",
   "--project",
-  "examples/lean",
+  requirement.project,
   "--module",
-  "Requirements",
+  requirement.module,
   "--claims",
-  "Client.stock_conserved",
+  requirement.claims.join(","),
   "--out",
-  "examples/generated/requirements.json",
+  `examples/generated/${requirement.file}.json`,
 ]);

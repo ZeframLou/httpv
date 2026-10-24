@@ -1,0 +1,55 @@
+{
+  "sp1Version": "5.2.4",
+  "elfSha256": "10819f2bb944e48fcbfbd5f49f47ba508bb0069a33923f8368a179e9e1bc5d37",
+  "verifierKey": "0x00a2d646d4c4c693eec3f7f24133b648ab3332c4b6d1e079aaa401c28c0f2d89",
+  "results": [
+    {
+      "name": "v1",
+      "exitCode": 0,
+      "wallSeconds": 7437.819592780001,
+      "userSeconds": 14119.569434,
+      "systemSeconds": 394.265623,
+      "peakRssKiB": 13452196,
+      "rayonThreads": 2,
+      "goMemoryLimit": "6GiB",
+      "goGc": 20,
+      "goMaxProcs": 2
+    },
+    {
+      "name": "v2",
+      "exitCode": 0,
+      "wallSeconds": 8391.863635956,
+      "userSeconds": 15961.531538,
+      "systemSeconds": 449.640315,
+      "peakRssKiB": 13064868,
+      "rayonThreads": 2,
+      "goMemoryLimit": "6GiB",
+      "goGc": 20,
+      "goMaxProcs": 2
+    },
+    {
+      "name": "v3",
+      "exitCode": 0,
+      "wallSeconds": 3710.858467004997,
+      "userSeconds": 12602.243886,
+      "systemSeconds": 494.05483,
+      "peakRssKiB": 13008232,
+      "rayonThreads": 4,
+      "goMemoryLimit": "6GiB",
+      "goGc": 20,
+      "goMaxProcs": 2
+    },
+    {
+      "name": "bridge",
+      "exitCode": 0,
+      "wallSeconds": 5523.365588774002,
+      "userSeconds": 18769.432432,
+      "systemSeconds": 733.905192,
+      "peakRssKiB": 13436376,
+      "rayonThreads": 4,
+      "goMemoryLimit": "6GiB",
+      "goGc": 20,
+      "goMaxProcs": 2
+    }
+  ]
+}

@@ -1,5 +1,5 @@
 /** Install actual npm tarballs; no Git dependency or native verifier is used. */
-import { mkdtemp, rm, copyFile } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve, join } from "node:path";
 
@@ -17,7 +17,11 @@ async function run(command: string[], cwd = temporary, isolated = false) {
       ...process.env,
       npm_config_cache: join(temporary, "npm-cache"),
       ...(isolated
-        ? { PATH: "/no-native-tools", ZKLEAN_NATIVE: "/no-native-verifier" }
+        ? {
+            PATH: "/no-native-tools",
+            ZKLEAN_NATIVE: "/no-native-verifier",
+            ELAN_HOME: "/no-lean",
+          }
         : {}),
     },
   });
@@ -39,31 +43,10 @@ try {
     resolve(sdk),
     join(temporary, packed[0].filename),
   ]);
-  await copyFile(
-    join(root, "tests/fixtures/identity.certificate.json"),
-    join(temporary, "certificate.json"),
-  );
+  // Typecheck and run the actual packaged entry point and its packaged data.
   await Bun.write(
     join(temporary, "consumer.ts"),
-    `
-import { createHTTPV } from "httpv";
-const httpv = createHTTPV();
-const certificate = await Bun.file("certificate.json").json();
-const server = Bun.serve({hostname: "127.0.0.1", port: 0, ...httpv.serve({
-  routes: {"POST /identity": {operation: "Demo.identity", certificate}}, fetch: () => new Response("ok"),
-})});
-try {
-  const received = await httpv.query(
-    "http://127.0.0.1:" + server.port + "/identity", {method: "POST", allowInsecureHttp: true},
-  );
-  const result = await httpv.checkCompatibility({advertisement: received, operation: "Demo.identity",
-    requirements: {format: "zklean/requirements/1", specs: certificate.specs},
-    mode: "exact", allowedAxioms: [],
-  });
-  if (result.status !== "verified") throw new Error(JSON.stringify(result));
-  console.log("npm-installed HTTPV discovered and verified a real proof without native tools.");
-} finally { server.stop(true); }
-`,
+    'import "./node_modules/httpv/examples/unit-upgrades.ts";\n',
   );
   await run([
     process.execPath,
@@ -86,8 +69,20 @@ try {
     "consumer.ts",
   ]);
   console.log("npm-installed HTTPV consumer typechecked.");
+  const result = JSON.parse(
+    await run([process.execPath, "consumer.ts"], temporary, true),
+  );
+  if (
+    result.states.map((state: { status: string }) => state.status).join(",") !==
+      "verified,verified,incompatible" ||
+    result.derived.status !== "verified" ||
+    result.rebound.status !== "incompatible" ||
+    result.rejected.status !== "unknown" ||
+    result.requests !== 2
+  )
+    throw new Error("installed inventory workflow failed");
   console.log(
-    (await run([process.execPath, "consumer.ts"], temporary, true)).trim(),
+    "npm-installed HTTPV ran its packaged real inventory workflow without native tools.",
   );
 } finally {
   await rm(temporary, { recursive: true, force: true });

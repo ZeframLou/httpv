@@ -31,7 +31,7 @@ Clients independently verify advertised guarantees but still trust the server
 to implement them in its deployed code and responses. HTTPV cannot detect a
 server violating its specification while advertising an unchanged certificate,
 and polling can miss changes between checks. Each client chooses its trusted
-verifier, operation bindings, permitted axioms, and failure policy.
+verifier, expected operations, permitted axioms, and failure policy.
 
 ## Get started
 

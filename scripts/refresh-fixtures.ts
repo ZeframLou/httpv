@@ -2,7 +2,7 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { examples } from "./export-examples.ts";
+import { examples } from "./models.ts";
 import { runZKLean } from "./zklean.ts";
 
 const temporary = await mkdtemp(join(tmpdir(), "httpv-fixtures-"));
@@ -12,7 +12,7 @@ try {
     await runZKLean([
       "export",
       "--project",
-      "examples/lean",
+      example.project,
       "--module",
       example.module,
       "--claims",
@@ -21,7 +21,7 @@ try {
       exported,
     ]);
     await runZKLean([
-      example.file === "requirements" ? "requirements" : "check",
+      example.requirements ? "requirements" : "check",
       "--export",
       exported,
       "--claims",
@@ -29,9 +29,9 @@ try {
       "--axioms",
       example.axioms.join(","),
       "--axiom-policy",
-      "examples/axioms.json",
+      example.policy,
       "--out",
-      `tests/fixtures/${example.file}${example.file === "requirements" ? "" : ".statement"}.json`,
+      example.modelPath,
     ]);
   }
 } finally {

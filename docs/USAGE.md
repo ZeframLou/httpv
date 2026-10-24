@@ -134,9 +134,15 @@ console.log(response.status, await response.json());
 Run `bun check.ts`. `query` retrieves an advertisement containing the endpoint’s
 operation and certificate; `checkCompatibility` authenticates the certificate,
 checks the expected operation, and compares its model with your requirements.
-Choose
-`allowedAxioms` deliberately: `["propext"]` permits the axiom used by the
+Choose `allowedAxioms` deliberately: `["propext"]` permits the axiom used by the
 inventory example, while `[]` accepts only certificates with no axioms.
+
+Custom axioms travel with their formal declarations and dependency definitions
+inside the certificate’s public model. Supply their reviewed fingerprints through
+`axiomPins` as well as their names in `allowedAxioms`; keep that policy under
+client control. An axiom has no proof or definition body, so an opaque proposition
+still needs an externally justified meaning. Missing or changed fingerprints
+return `unknown` with `unpinned-axiom` or `axiom-mismatch`, respectively.
 
 | Status         | Meaning                                                       |
 | -------------- | ------------------------------------------------------------- |
@@ -261,8 +267,10 @@ a check, and `stop()` invalidates the result and cancels discovery and future
 polling. Simultaneous refreshes share one check. Polling does not establish what
 the server does between checks or bind a later response to a certificate.
 
-For an inventory upgrade demonstration, see
-[Development](DEVELOPMENT.md#run-the-arithmetic-upgrade-demonstration).
+For a complete upgrade demonstration using four committed real Groth16
+certificates and request gating, see
+[the single-unit inventory workflow](DEVELOPMENT.md#run-the-real-single-unit-workflow).
+The arbitrary-quantity arithmetic example is a separate expensive proving workload.
 
 ## Derive a weaker requirement
 
