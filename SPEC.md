@@ -72,23 +72,35 @@ Content-Type: application/httpv+json
 Cache-Control: no-store
 
 {
-  "certificates": {
+  "format": "httpv/1",
+  "contracts": {
     "POST": {
-      "format": "zklean/1",
-      "specs": {
-        "declarations": "base64:...",
-        "claims": ["Inventory.reservation_safe"]
-      },
-      "axioms": ["propext"],
-      "proof": "base64:..."
+      "operation": "Inventory.POST_reservations",
+      "certificate": {
+        "format": "zklean/1",
+        "specs": {
+          "declarations": "base64:...",
+          "claims": ["Inventory.reservation_safe"]
+        },
+        "axioms": ["propext"],
+        "proof": "base64:..."
+      }
     }
   }
 }
 ```
 
-The `certificates` object maps HTTP methods to their respective ZKLean certificates.
+The envelope MUST have exactly `format` and `contracts` fields, with format
+`httpv/1`. The `contracts` object maps HTTP methods to advertisements, each with
+exactly `operation` and `certificate` fields. The nonempty `operation` name MUST
+identify a declaration in the certified claims’ public dependency context;
+proof-only dependencies cannot establish an endpoint binding. Bare certificates
+and unsupported discovery versions MUST be rejected.
 
-The advertised contract MUST define the behavior of the corresponding HTTP method and resource. This association MUST be authenticated as part of the HTTPV response, and the formal model MUST precisely identify the operations and inputs it describes.
+The advertised entrypoint MUST define the behavior of the corresponding HTTP
+method and resource. HTTPS authenticates this association; the certificate
+proves mathematical claims, not deployment behavior. The formal model MUST
+precisely identify the operation and inputs it describes.
 
 Parameterized routes MAY share a certificate when its model explicitly covers the applicable parameter domain.
 
@@ -130,6 +142,19 @@ names, types, and definition bodies MUST agree. Extra certified remote claims
 are permitted. This structural comparison does not decide arbitrary semantic
 equivalence. Under explicit exact mode, a mismatch is `incompatible`; implication
 mode MUST return `unknown` without an applicable verified bridge.
+
+Clients MUST explicitly select the expected entrypoint name through `operation`.
+It MUST occur in the local requirement claim closure and equal the advertised
+entrypoint. Its declaration and full resolved context MUST match the
+authenticated remote claim closure. Bridges MUST NOT supply missing remote
+operations or authorize a different advertised entrypoint. Implementations MUST
+enforce bindings before using cached compatibility, and cache identities MUST
+include both the observed and expected entrypoints. Changing only the advertised
+entrypoint MUST trigger re-evaluation and monitor notifications.
+
+This profile conservatively requires stable operation names and kernel content.
+A renamed or redefined operation requires newly reviewed requirements and
+bindings; this implementation does not establish arbitrary operation mappings.
 
 A bridge MUST independently certify the required propositions. Its axioms MUST
 be permitted client axioms or independently authenticated remote claims. Remote
@@ -236,12 +261,12 @@ The project MUST provide a TypeScript library targeting Bun, with client and ser
 import { createHTTPV } from "httpv";
 
 const HTTPV = createHTTPV();
-const certificate = await HTTPV.query(
+const advertisement = await HTTPV.query(
   "https://example.com/reservations",
   { method: "POST" }
 );
 
-const result = await HTTPV.verify(certificate, {
+const result = await HTTPV.verify(advertisement.certificate, {
   allowedAxioms: ["propext", "Quot.sound"]
 });
 ```
@@ -250,7 +275,8 @@ const result = await HTTPV.verify(certificate, {
 
 ```typescript
 const result = await HTTPV.checkCompatibility({
-  certificate,
+  operation: "Inventory.POST_reservations",
+  advertisement,
   requirements: "./specs/requirements.json",
   mode: "exact",
   allowedAxioms: ["propext", "Quot.sound"]
@@ -273,6 +299,7 @@ snapshot can be deployed without those source files.
 
 ```typescript
 const monitor = HTTPV.watch({
+  operation: "Inventory.POST_reservations",
   url: "https://example.com/reservations",
   method: "POST",
   requirements: "./specs/requirements.json",
@@ -293,7 +320,8 @@ await fetch("https://example.com/reservations", { method: "POST" });
 `watch` periodically refreshes the remote contract, verifies its certificate, and evaluates compatibility.
 
 The callback receives the current verification status, reason, certificate
-identity, model identity, and check time. It MUST be synchronous; returning a
+identity, advertised operation, model identity, and check time. It MUST be
+synchronous; returning a
 promise invalidates verification and stops the monitor. It runs on the first
 result and meaningful state or identity changes. Discovery failures become
 `unknown` results; `onError` handles callback errors. Concurrent refreshes share
@@ -306,13 +334,21 @@ import { HTTPV } from "httpv";
 
 const app = HTTPV.serve({
   routes: {
-    "POST /reservations": "./certs/reservations.json"
+    "POST /reservations": {
+      operation: "Inventory.POST_reservations",
+      certificate: "./certs/reservations.json"
+    }
   },
   fetch: existingHandler
 });
 ```
 
 The server adapter automatically handles HTTPV discovery requests and delegates normal HTTP requests to the existing application handler.
+
+Static certificate objects MUST be snapshotted at registration. Certificate
+files MUST be reloaded for each discovery request. A provider function MAY
+return a complete `{ operation, certificate }` pair asynchronously, allowing both
+fields to change together. Invalid provider output MUST fail discovery.
 
 Certificates are generated separately, typically during development or CI, and published alongside the application.
 

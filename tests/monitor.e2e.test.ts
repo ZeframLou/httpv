@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { createHTTPV } from "../src/index.ts";
-import { testAuthority, inventoryAxioms } from "./helpers.ts";
+import { testAuthority, inventoryAxioms, advertise } from "./helpers.ts";
 
 async function setup() {
   const authority = testAuthority();
@@ -14,11 +14,12 @@ async function setup() {
     hostname: "127.0.0.1",
     port: 0,
     ...httpv.serve({
-      routes: { "POST /reservations": () => current },
+      routes: { "POST /reservations": () => advertise(current) },
       fetch: () => new Response("ok"),
     }),
   });
   const options = {
+    operation: "Inventory.POST_reservations",
     url: `http://127.0.0.1:${server.port}/reservations`,
     method: "POST",
     allowInsecureHttp: true,
@@ -101,7 +102,11 @@ test("verified state expires even while a later verifier is stalled", async () =
       },
     },
   });
-  const monitor = client.watch({ ...app.options, timeout: 600, maxAge: 50 });
+  const monitor = client.watch({
+    ...app.options,
+    timeout: 600,
+    maxAge: 50,
+  });
   try {
     expect((await monitor.refresh()).status).toBe("verified");
     hang = true;

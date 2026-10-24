@@ -1,3 +1,4 @@
+import { advertise } from "./helpers.ts";
 import { expect, test } from "bun:test";
 import { createHTTPV } from "../src/index.ts";
 import { inventoryHandler } from "../examples/inventory.ts";
@@ -11,7 +12,7 @@ test("inventory reservations conserve stock across concurrent HTTP requests", as
     hostname: "127.0.0.1",
     port: 0,
     ...httpv.serve({
-      routes: { "POST /reservations": certificate },
+      routes: { "POST /reservations": advertise(certificate) },
       fetch: inventoryHandler(),
     }),
   });
@@ -28,7 +29,8 @@ test("inventory reservations conserve stock across concurrent HTTP requests", as
     });
     expect(
       await httpv.checkCompatibility({
-        certificate: advertised,
+        operation: "Inventory.POST_reservations",
+        advertisement: advertised,
         requirements: {
           format: "zklean/requirements/1",
           specs: certificate.specs,

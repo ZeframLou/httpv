@@ -1,5 +1,5 @@
-import { parseCertificate } from "zklean/encoding";
-import type { Certificate, Handler, ServeOptions } from "./types.ts";
+import { DISCOVERY_FORMAT, parseAdvertisement } from "./advertisement.ts";
+import type { Advertisement, Handler, ServeOptions } from "./types.ts";
 
 export const MEDIA_TYPE = "application/httpv+json";
 export function methodName(method: string): string {
@@ -36,7 +36,15 @@ export function discoveryHandler(options: ServeOptions): Handler {
       throw new Error(`invalid resource path: ${path}`);
     const methods = paths.get(path) ?? new Map();
     if (methods.has(method)) throw new Error(`duplicate route: ${route}`);
-    methods.set(method, source);
+    // Static declarations are snapshots. Providers return a complete pair when
+    // deployments need to change the certificate and entrypoint together.
+    const pinned =
+      typeof source === "function"
+        ? source
+        : typeof source.certificate === "string"
+          ? { operation: source.operation, certificate: source.certificate }
+          : parseAdvertisement(source);
+    methods.set(method, pinned);
     paths.set(path, methods);
   }
   return async (request) => {
@@ -58,17 +66,24 @@ export function discoveryHandler(options: ServeOptions): Handler {
         [...methods].map(async ([method, source]) => {
           // Files and providers are reloaded for each advertisement, including upgrades.
           const value =
-            typeof source === "string"
-              ? await Bun.file(source).json()
-              : typeof source === "function"
-                ? await source()
-                : source;
-          return [method, parseCertificate(value)] as const;
+            typeof source === "function"
+              ? await source()
+              : {
+                  operation: source.operation,
+                  certificate:
+                    typeof source.certificate === "string"
+                      ? await Bun.file(source.certificate).json()
+                      : source.certificate,
+                };
+          return [method, parseAdvertisement(value)] as const;
         }),
       );
-      const certificates: Record<string, Certificate> =
+      const contracts: Record<string, Advertisement> =
         Object.fromEntries(entries);
-      return Response.json({ certificates }, { headers });
+      return Response.json(
+        { format: DISCOVERY_FORMAT, contracts },
+        { headers },
+      );
     } catch {
       return Response.json(
         { error: "Advertised contract unavailable" },
