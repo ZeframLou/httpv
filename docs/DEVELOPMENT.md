@@ -43,11 +43,12 @@ dependency. The workflow checks formatting, TypeScript, and HTTP end-to-end test
 
 The transport tests sign frozen statements that were checked by Nanoda when
 created. They exercise discovery, compatibility, axiom policy, and monitoring;
-the signature backend is test-only. An additional test verifies a real compressed
-STARK certificate through the ZKLean adapter when a native verifier is available:
+the signature backend is test-only. The mandatory crypto test verifies a real
+Groth16 certificate through the default embedded ZKLean verifier and rejects
+tampered evidence and a different valid model:
 
 ```sh
-ZKLEAN_NATIVE="$HOME/.local/libexec/zklean-native" bun test
+bun test tests/crypto.e2e.test.ts
 ```
 
 ## Regenerate model fixtures
@@ -67,7 +68,7 @@ from ZKLean's cryptographic integration test.
 ## Run the upgrade demonstration
 
 ```sh
-bun scripts/prove-examples.ts
+ZKLEAN_PROVE_TIMEOUT=86400000 bun scripts/prove-examples.ts
 bun run example
 ```
 
@@ -76,6 +77,21 @@ checks its requirement against three advertisements, continuing through a
 compatible upgrade and blocking requests after backorders are introduced.
 A separate Lean derivation establishes compatibility for a differently named
 client requirement.
+The inventory models are expensive CPU proving workloads; the command above
+allows up to a day per proof. Choose a time and memory budget using ZKLean's
+measurements. `ZKLEAN_PROVE_TIMEOUT` forwards a timeout in milliseconds to the
+CLI; without it, the CLI's default deadline applies.
 
-The example reads the trusted verifier configuration from the installed CLI's
-`doctor` output. Set `ZKLEAN_CLI` when the executable is not on `PATH`.
+The runtime example uses the SDK's embedded verifier and trusted checker key.
+Only offline fixture and proof generation needs the separately installed CLI;
+set `ZKLEAN_CLI` when that executable is not on `PATH`.
+
+`examples/axioms.json` pins the reviewed example assumptions by their complete
+dependency contexts. Source changes require reviewing and updating those pins;
+do not accept producer-supplied fingerprints as application policy.
+
+To check actual npm consumption without publishing, pack the tested ZKLean SDK
+and pass its tarball to `bun scripts/check-package.ts PATH_TO_ZKLEAN_TARBALL`.
+The script packs HTTPV, installs both tarballs with npm, and discovers and
+verifies a real proof through their public APIs with native tools unavailable.
+It does not fetch a private Git dependency or use a sibling source checkout.

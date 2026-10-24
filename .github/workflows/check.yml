@@ -31,3 +31,8 @@ jobs:
           bun install --frozen-lockfile
       - run: bun run format:check
       - run: bun run check
+      - name: Check npm consumer packages
+        run: |
+          mkdir -p "$RUNNER_TEMP/sdk-package"
+          npm pack ./node_modules/zklean --pack-destination "$RUNNER_TEMP/sdk-package"
+          bun scripts/check-package.ts "$RUNNER_TEMP/sdk-package/zklean-0.1.0.tgz"

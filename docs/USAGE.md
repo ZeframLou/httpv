@@ -11,10 +11,12 @@ npm install httpv
 You can also use `bun add httpv`. The examples run on [Bun](https://bun.sh/)
 1.4.4 or newer and use its server and file APIs. Relative file paths resolve
 from the directory where you run the application.
+For TypeScript checking, add `@types/bun` as a development dependency if the
+application does not already include Bun's types.
 
 ## Publish a certificate
 
-Generate the API's certificate with [ZKLean](https://github.com/ZeframLou/zklean)
+Generate the API's certificate with [ZKLean](https://github.com/ZeframLou/zklean-dist)
 before deployment and save it as `certs/reservations.json`. Its specification
 must describe the operation, inputs, and resource it covers.
 
@@ -48,38 +50,23 @@ describes, and expose the endpoint over HTTPS in production.
 
 ## Configure a client verifier
 
-The client supplies a trusted verifier. The following setup uses ZKLean's local
-native verifier; [install ZKLean](https://github.com/ZeframLou/zklean#install-zklean)
-on the client machine first. The npm installation also supplies ZKLean's
-TypeScript SDK.
-
-Save this as `httpv.ts`:
+The npm installation supplies ZKLean's embedded WebAssembly verifier and pinned
+checker key. Save this as `httpv.ts`:
 
 ```ts
-import { homedir } from "node:os";
 import { createHTTPV } from "httpv";
-import { nativeBackend } from "zklean";
 
-const prefix = process.env.ZKLEAN_PREFIX ?? `${homedir()}/.local`;
-const profile = await Bun.file(`${prefix}/share/zklean/verifier.json`).json();
-
-export const httpv = createHTTPV({
-  backend: nativeBackend({
-    binary: `${prefix}/libexec/zklean-native`,
-    verifierKey: profile.verifierKey,
-    verificationKey: profile.verificationKey,
-  }),
-});
+export const httpv = createHTTPV();
 ```
 
-The key comes from your trusted local installation, never from the API being
-checked. Set `ZKLEAN_PREFIX` if you installed ZKLean elsewhere. This configuration
-needs no prover or Lean process during HTTPV checks.
+The trusted key comes from the SDK, never from the API being checked. Client
+verification needs no native executable, prover, circuit download, or Lean
+process. Generate certificates separately with the ZKLean CLI before deployment.
 
 You can instead supply a `ProofBackend` with an `identity` string and an async
 `verify(certificate)` method returning a boolean. That backend is trusted to
-authenticate the entire certificate. Without a backend, discovery and serving
-work, but verification returns `unknown` with reason `verifier-unavailable`.
+authenticate the entire certificate. Its identity must describe its trusted
+checker configuration. The default instance uses ZKLean's embedded backend.
 
 ## Choose your requirements
 
@@ -92,20 +79,20 @@ and approved. Save it as `contracts/approved.json`, then run this once as
 `bun requirements.ts`:
 
 ```ts
-import { parseCertificate } from "zklean";
+import { parseCertificate, requirementsFor } from "zklean";
 
 const approved = parseCertificate(
   await Bun.file("./contracts/approved.json").json(),
 );
 await Bun.write(
   "./specs/requirements.json",
-  JSON.stringify({ format: "zklean/requirements/1", specs: approved.specs }),
+  JSON.stringify(requirementsFor(approved.specs)),
 );
 ```
 
 Commit the resulting snapshot with your client. You can also generate a
 requirements snapshot from your own Lean declarations using
-[`zklean requirements`](https://github.com/ZeframLou/zklean/blob/work/docs/DEVELOPMENT.md).
+[`zklean requirements`](https://github.com/ZeframLou/zklean-dist/blob/main/docs/USAGE.md).
 
 ## Check an API before using it
 
@@ -248,3 +235,68 @@ the server does between checks or bind a later response to a certificate.
 
 For a complete inventory upgrade demonstration, see
 [Development](DEVELOPMENT.md#run-the-upgrade-demonstration).
+
+## Derive a weaker requirement
+
+Exact matching does not discover arbitrary mathematical implications. To use a
+stronger guarantee for a weaker client requirement, certify a separate Lean
+derivation, called a bridge. Both the remote certificate and the bridge are
+verified independently.
+
+Follow ZKLean's [certificate import and bridge guide](https://github.com/ZeframLou/zklean-dist/blob/main/docs/USAGE.md)
+to authenticate and inspect `certs/reservations.json`, import its public model
+into `Remote.lean`, and prove this in a local Lake project:
+
+```lean
+import Remote
+
+theorem Client.stock_conserved (available requested remaining : Nat) :
+    Inventory.POST_reservations available requested = some remaining →
+      remaining + requested = available := by
+  intro accepted
+  exact (Inventory.reservation_safe available requested remaining accepted).2.2
+```
+
+The remote guarantee also promises a positive quantity and sufficient stock;
+this derivation extracts just the conservation property. The imported guarantee
+is an explicit assumption for the separate bridge proof. ZKLean's authenticated
+import writes the complete assumption fingerprints used when certifying it.
+
+Keep the resulting `bridge.json` and the reviewed `requirements.json` snapshot
+with the client. Supply the bridge to HTTPV:
+
+```ts
+const result = await httpv.checkCompatibility({
+  certificate,
+  requirements: "./specs/requirements.json",
+  derivation: await Bun.file("./specs/bridge.json").json(),
+  allowedAxioms: ["propext"],
+});
+if (result.status !== "verified") throw new Error(result.reason);
+```
+
+HTTPV permits a bridge to assume only authenticated remote claims and your
+explicitly permitted axioms. It checks the assumed claims' complete types and
+resolved dependency contexts. Binder display names may differ; changed
+definitions with the same names require distinct or versioned contexts before
+they can coexist in a bridge. Valid certificates alone do not establish an
+implication between them.
+
+## Bind a snapshot to local Lean sources
+
+A JSON requirement snapshot is self-contained and can be deployed without Lean.
+If the application instead passes a `.lean` path, generate its sidecar with the
+CLI during development. For example:
+
+```sh
+zklean requirements --project specs --module Requirements \
+  --claims Client.stock_conserved --out specs/Requirements.lean.zklean.json
+```
+
+`requirements: "./specs/Requirements.lean"` then loads that exact sidecar and
+checks its source manifest before use. The manifest includes transitive source
+imports, Lake project files, and toolchain artifacts. All recorded files must
+remain available and unchanged; a stale or missing file returns
+`requirements-unavailable`. Regenerate and review the snapshot after edits,
+before a rebuild can hide an old source dependency. The runtime does not
+elaborate Lean or create missing sidecars.

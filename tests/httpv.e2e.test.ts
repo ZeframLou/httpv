@@ -250,7 +250,7 @@ test("cached verification enforces new axiom policies and detects statement tamp
         axiomPins,
       })
     ).reason,
-  ).toBe("verifier-unavailable");
+  ).toBe("invalid-certificate");
   const model = readModel(v1.specs);
   delete model.declarations["Inventory.POST_reservations"];
   const unresolved = {

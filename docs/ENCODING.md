@@ -1,7 +1,7 @@
 # HTTPV compatibility profile
 
 Certificates and formal model decoding use the
-[ZKLean encoding profile](https://github.com/ZeframLou/zklean/blob/work/docs/ENCODING.md).
+[ZKLean encoding profile](https://github.com/ZeframLou/zklean-dist/blob/main/docs/ENCODING.md).
 HTTPV does not implement a second certificate decoder or verifier.
 
 ## Requirements and compatibility
@@ -14,7 +14,8 @@ project files, and toolchain artifacts. Every recorded digest is checked before
 the snapshot is used. The self-contained snapshot is what the client trusts.
 
 Exact matching requires every requested claim to be certified and its complete
-resolved public context to match. Extra remote claims are permitted. Under
+resolved public context to match. Binder display names and annotations are
+ignored; constant names, types, and definition bodies are retained. Extra remote claims are permitted. Under
 `mode:"exact"`, a mismatch is `incompatible` with that explicit exact contract.
 The default implication mode returns `unknown` when no derivation is available.
 

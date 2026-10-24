@@ -2,6 +2,8 @@
 import { examples } from "./export-examples.ts";
 import { runZKLean } from "./zklean.ts";
 
+const timeout = process.env.ZKLEAN_PROVE_TIMEOUT;
+
 for (const example of examples.filter((entry) =>
   ["v1", "v2", "v3", "bridge"].includes(entry.file),
 )) {
@@ -18,6 +20,7 @@ for (const example of examples.filter((entry) =>
     example.axioms.join(","),
     "--axiom-policy",
     "examples/axioms.json",
+    ...(timeout ? ["--timeout", timeout] : []),
     "--out",
     `examples/generated/${example.file}.json`,
   ]);

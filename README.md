@@ -17,7 +17,7 @@ providers, or revise its assumptions.
 ## How it works
 
 An API's guarantees are expressed as mathematical statements in
-[Lean](https://lean-lang.org/). [ZKLean](https://github.com/ZeframLou/zklean)
+[Lean](https://lean-lang.org/). [ZKLean](https://github.com/ZeframLou/zklean-dist)
 produces a certificate: cryptographic evidence that those statements follow from
 declared assumptions, called axioms.
 

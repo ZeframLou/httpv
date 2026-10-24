@@ -1,12 +1,10 @@
 import { resolve } from "node:path";
 import { createHTTPV } from "../src/index.ts";
-import { nativeBackend, parseCertificate } from "zklean";
+import { parseCertificate } from "zklean";
 import { inventoryHandler, inventoryAxioms } from "./inventory.ts";
-import { installedVerifier } from "./verifier.ts";
 
 const generated = resolve(import.meta.dir, "generated");
-const config = await installedVerifier();
-const httpv = createHTTPV({ backend: nativeBackend(config) });
+const httpv = createHTTPV();
 const versions = await Promise.all(
   ["v1", "v2", "v3"].map(async (name) =>
     parseCertificate(await Bun.file(`${generated}/${name}.json`).json()),
