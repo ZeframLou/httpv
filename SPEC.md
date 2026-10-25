@@ -406,12 +406,11 @@ statement identity identifies that.
 `source` is not covered by the proof and may point anywhere. A client MUST use
 it only to obtain Lean declarations, MUST discard the whole export unless it
 reproduces every certified identity [ZKLEAN], and MUST NOT execute content
-fetched from it. A client MUST NOT dereference a `source` that is not
-an `https` URL when the certificate came over the network, so that a
-certificate cannot direct it to local files; this applies to every redirect it
-follows. It SHOULD NOT dereference a `source` whose host resolves to a
-loopback, link-local, or private address unless configured to, and MUST bound
-the size of what it fetches.
+fetched from it. A `source` is an `https` URL [ZKLEAN], so a certificate
+cannot direct a client to local files; a client MUST NOT follow a redirect from
+it, which could lead anywhere else. A client SHOULD NOT dereference a `source`
+whose host resolves to a loopback, link-local, or private address unless
+configured to, and MUST bound the size of what it fetches.
 
 ### 7.7. Resource exhaustion
 
@@ -511,8 +510,8 @@ registration is:
   "HTTP Caching", STD 98, RFC 9111, June 2022.
 - **[URL]** WHATWG, "URL Standard", <https://url.spec.whatwg.org/>.
 - **[ZKLEAN]** "ZKLean certificate format", version `zklean/1`, commit
-  `da87c31e6ee5985c0d83f1a92f89fff23cb3fe04`,
-  <https://github.com/ZeframLou/zklean/blob/da87c31e6ee5985c0d83f1a92f89fff23cb3fe04/SPEC.md>.
+  `7fb7c956065782cd9861439b37111359da4ca598`,
+  <https://github.com/ZeframLou/zklean/blob/7fb7c956065782cd9861439b37111359da4ca598/SPEC.md>.
 
 ### 10.2. Informative references
 
