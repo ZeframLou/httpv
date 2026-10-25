@@ -18,31 +18,54 @@ import type {
   WatchOptions,
 } from "./types.ts";
 
-/** A certificate is a few hundred bytes; an envelope holds one per method. */
+/** A certificate is under 1 KB; an envelope holds one per method. */
 const MAX_DISCOVERY_BYTES = 64 * 1024;
 
 const positiveInteger = (value: unknown): value is number =>
   Number.isSafeInteger(value) && (value as number) > 0;
 
-async function readText(response: Response, limit: number): Promise<string> {
+/** Plain HTTP is only for a server on this machine. */
+const loopback = (host: string) =>
+  host === "localhost" ||
+  host.endsWith(".localhost") ||
+  host === "[::1]" ||
+  /^127\.\d+\.\d+\.\d+$/.test(host);
+
+/** Read at most `limit` bytes. A failed read is a transport error; content
+ * that is too large or not UTF-8 JSON is the server's error. */
+async function readJSON(response: Response, limit: number): Promise<unknown> {
   const chunks: Uint8Array[] = [];
   let size = 0;
   const reader = response.body?.getReader();
-  for (
-    let next = await reader?.read();
-    next && !next.done;
-    next = await reader!.read()
-  ) {
-    size += next.value.byteLength;
-    if (size > limit) {
-      await reader!.cancel();
-      throw new Error("discovery response too large");
+  try {
+    for (
+      let next = await reader?.read();
+      next && !next.done;
+      next = await reader!.read()
+    ) {
+      size += next.value.byteLength;
+      if (size > limit) {
+        await reader!.cancel();
+        throw new DiscoveryError(
+          "invalid-advertisement",
+          "discovery response too large",
+        );
+      }
+      chunks.push(next.value);
     }
-    chunks.push(next.value);
+  } catch (error) {
+    if (error instanceof DiscoveryError) throw error;
+    throw new DiscoveryError("unavailable", String(error));
   }
-  return new TextDecoder("utf-8", { fatal: true }).decode(
-    Bun.concatArrayBuffers(chunks),
-  );
+  try {
+    return JSON.parse(
+      new TextDecoder("utf-8", { fatal: true }).decode(
+        Bun.concatArrayBuffers(chunks),
+      ),
+    );
+  } catch (error) {
+    throw new DiscoveryError("invalid-advertisement", String(error));
+  }
 }
 
 /** Each instance holds one trust configuration: verifier backend and transport. */
@@ -62,11 +85,15 @@ export function createHTTPV(options: ClientOptions = {}) {
     const target = new URL(url);
     if (
       target.protocol !== "https:" &&
-      !(allowInsecureHttp && target.protocol === "http:")
+      !(
+        allowInsecureHttp &&
+        target.protocol === "http:" &&
+        loopback(target.hostname)
+      )
     )
       throw new DiscoveryError(
         "unavailable",
-        "HTTPV requires HTTPS (allowInsecureHttp is for development)",
+        "HTTPV requires HTTPS (allowInsecureHttp permits http to loopback only)",
       );
     if (target.username || target.password || target.hash)
       throw new DiscoveryError("unavailable", "invalid discovery URL");
@@ -91,21 +118,20 @@ export function createHTTPV(options: ClientOptions = {}) {
       ?.split(";")[0]!
       .trim()
       .toLowerCase();
-    if (!response.ok || type !== MEDIA_TYPE) {
+    const summary = `discovery returned ${response.status} ${type ?? "without a media type"}`;
+    if (response.status !== 200 || type !== MEDIA_TYPE) {
       await response.body?.cancel();
-      const missing = response.ok || [404, 405, 501].includes(response.status);
-      throw new DiscoveryError(
-        missing ? "missing-certificate" : "unavailable",
-        `discovery returned ${response.status} ${type ?? "without a media type"}`,
-      );
+      // Anything but 200 is a server that answered without a certificate,
+      // except a failure status or a 2xx that claims to be one.
+      const reason =
+        type === MEDIA_TYPE && response.ok
+          ? "invalid-advertisement"
+          : response.ok || [404, 405, 406, 501].includes(response.status)
+            ? "missing-certificate"
+            : "unavailable";
+      throw new DiscoveryError(reason, summary);
     }
-    let body: unknown;
-    try {
-      body = JSON.parse(await readText(response, maxBytes));
-    } catch (error) {
-      throw new DiscoveryError("invalid-advertisement", String(error));
-    }
-    return parseDiscovery(body, name);
+    return parseDiscovery(await readJSON(response, maxBytes), name);
   }
 
   /** Decide whether a certificate establishes a requirement. */
@@ -124,6 +150,9 @@ export function createHTTPV(options: ClientOptions = {}) {
     let requirements: Requirements;
     try {
       requirements = await loadRequirements(requirement.requirements);
+      // Requiring nothing would accept any valid certificate.
+      if (!Object.keys(requirements.claims).length)
+        throw new Error("requirements list no claims");
     } catch (error) {
       return {
         ...identity,
@@ -147,6 +176,8 @@ export function createHTTPV(options: ClientOptions = {}) {
     options: Pick<QueryOptions, "signal" | "timeout"> = {},
   ): Promise<Result> {
     try {
+      // Own the dependency: the caller's object may change while discovery awaits.
+      dependency = structuredClone(dependency);
       return await compare(
         await query(dependency.url, { ...dependency, ...options }),
         dependency,
@@ -160,6 +191,7 @@ export function createHTTPV(options: ClientOptions = {}) {
 
   /** Recheck a dependency every `interval`. Gate dependent requests with requireVerified(). */
   function watch(dependency: Dependency, settings: WatchOptions): Monitor {
+    dependency = structuredClone(dependency);
     const { interval, timeout = 10_000, onChange } = settings;
     const maxAge = settings.maxAge ?? interval + timeout;
     for (const [name, value] of Object.entries({ interval, timeout, maxAge }))
@@ -172,9 +204,12 @@ export function createHTTPV(options: ClientOptions = {}) {
     let timer: Timer | undefined;
     let expiry: Timer | undefined;
     let notified: string | undefined;
+    let running: Promise<unknown> | undefined;
 
     // Verification cannot be cancelled, so a deadline settles the cycle and a
-    // result that arrives late, even one that won the race, is discarded.
+    // result that arrives late, even one that won the race, is discarded. A
+    // check abandoned that way still runs, so the next one waits for it: one
+    // check at a time, however slowly the verifier answers.
     const cycle = async (): Promise<Result> => {
       const started = Date.now();
       const deadline = AbortSignal.any([
@@ -184,14 +219,18 @@ export function createHTTPV(options: ClientOptions = {}) {
       const aborted = new Promise<void>((resolve) =>
         deadline.addEventListener("abort", () => resolve(), { once: true }),
       );
-      const result = await Promise.race([
-        check(dependency, { signal: deadline, timeout }),
-        aborted,
-      ]);
+      const previous = running;
+      const work = (async () => {
+        await previous;
+        return check(dependency, { signal: deadline, timeout });
+      })();
+      running = work;
+      const result = await Promise.race([work, aborted]);
       if (stopper.signal.aborted) return stopped();
       if (!result || Date.now() - started >= timeout)
-        return { status: "unknown", reason: "timeout" };
-      return result;
+        return { status: "unknown", reason: "timeout", checkedAt: started };
+      // A result is as old as the request that produced it.
+      return { ...result, checkedAt: started };
     };
 
     const notify = (result: Result): void => {
@@ -217,12 +256,15 @@ export function createHTTPV(options: ClientOptions = {}) {
       inflight ??= cycle().then((result) => {
         inflight = undefined;
         if (stopper.signal.aborted) return stopped();
-        latest = { ...result, checkedAt: Date.now() };
+        latest = result;
         clearTimeout(timer);
         clearTimeout(expiry);
         timer = setTimeout(refresh, interval);
         if (latest.status === "verified")
-          expiry = setTimeout(() => notify(expired()), maxAge);
+          expiry = setTimeout(
+            () => notify(expired()),
+            Math.max(0, latest.checkedAt! + maxAge - Date.now()),
+          );
         notify(latest);
         return { ...latest };
       });

@@ -60,6 +60,8 @@ test("unusable requirements fail closed", async () => {
     for (const requirements of [
       join(directory, "missing.json"),
       { ...fixtures.exact, extra: true },
+      // Requiring nothing would accept every valid certificate.
+      { ...fixtures.exact, claims: {} },
     ])
       expect(
         await compare(fixtures.v1, {
@@ -78,5 +80,33 @@ test("mutating the inputs during verification cannot change what is compared", a
     axioms,
   });
   Object.assign(supplied, structuredClone(fixtures.v1));
+  expect(await pending).toMatchObject({ status: "incompatible" });
+});
+
+test("a dependency changed during discovery is checked as it was", async () => {
+  let release!: () => void;
+  const slow = createHTTPV({
+    backend: fixtures.authority.backend,
+    fetch: async () => {
+      await new Promise<void>((resolve) => (release = resolve));
+      return Response.json(
+        { format: "httpv/1", certificates: { POST: fixtures.v3 } },
+        { headers: { "content-type": "application/httpv+json" } },
+      );
+    },
+  });
+  const dependency = {
+    url: "https://inventory.example/reservations",
+    method: "POST",
+    requirements: fixtures.exact,
+    axioms,
+  };
+  const pending = slow.check(dependency);
+  dependency.requirements = {
+    ...fixtures.exact,
+    claims: fixtures.v3.claims,
+  };
+  await Bun.sleep(0);
+  release();
   expect(await pending).toMatchObject({ status: "incompatible" });
 });

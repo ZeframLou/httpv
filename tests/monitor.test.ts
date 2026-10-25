@@ -210,3 +210,56 @@ test("settings must be positive integers", async () => {
       httpv.watch(dependency, settings as unknown as { interval: number }),
     ).toThrow(RangeError);
 });
+
+test("a check abandoned at its timeout finishes before the next one starts", async () => {
+  const { authority, app, dependency, serveVersion } = setup();
+  using _ = app;
+  let calls = 0;
+  let release!: () => void;
+  const stall = new Promise<void>((resolve) => (release = resolve));
+  const monitor = createHTTPV({
+    backend: {
+      identity: authority.backend.identity,
+      async verify(certificate) {
+        calls++;
+        await stall;
+        return authority.backend.verify(certificate);
+      },
+    },
+  }).watch(dependency, { interval: 60_000, timeout: 50 });
+  try {
+    expect((await monitor.refresh()).reason).toBe("timeout");
+    // A different certificate, so the verifier's cache cannot merge the work.
+    serveVersion(1);
+    expect((await monitor.refresh()).reason).toBe("timeout");
+    expect(calls).toBe(1);
+    release();
+    await Bun.sleep(20);
+    expect((await monitor.refresh()).status).toBe("verified");
+  } finally {
+    release();
+    monitor.stop();
+  }
+});
+
+test("a result's age counts from the request that produced it", async () => {
+  const { authority, app, dependency } = setup();
+  using _ = app;
+  const started = Date.now();
+  const monitor = createHTTPV({
+    backend: {
+      identity: authority.backend.identity,
+      async verify(certificate) {
+        await Bun.sleep(100);
+        return authority.backend.verify(certificate);
+      },
+    },
+  }).watch(dependency, { interval: 60_000 });
+  try {
+    const result = await monitor.refresh();
+    expect(result.status).toBe("verified");
+    expect(result.checkedAt!).toBeLessThan(started + 50);
+  } finally {
+    monitor.stop();
+  }
+});

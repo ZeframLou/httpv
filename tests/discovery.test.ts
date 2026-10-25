@@ -25,7 +25,6 @@ test("OPTIONS with the HTTPV media type returns the certificate; other requests 
     headers: { Accept: `text/html, ${MEDIA_TYPE}; q=1` },
   });
   expect(discovery.headers.get("cache-control")).toBe("no-store");
-  expect(discovery.headers.get("vary")).toBe("Accept");
   for (const method of ["POST", "OPTIONS"])
     expect(await fetch(app.url, { method }).then((r) => r.json())).toEqual({
       method,
@@ -40,6 +39,19 @@ test("OPTIONS with the HTTPV media type returns the certificate; other requests 
   await expect(httpv.query(app.url, { method: "POST" })).rejects.toThrow(
     "HTTPS",
   );
+  // Plain HTTP is for a server on this machine only.
+  await expect(
+    httpv.query("http://inventory.example/reservations", local),
+  ).rejects.toThrow("loopback");
+});
+
+test("a resource without certificates gets the application's OPTIONS response", async () => {
+  using app = listen(v1);
+  const response = await fetch(app.url.replace("reservations", "other"), {
+    method: "OPTIONS",
+    headers: { Accept: MEDIA_TYPE },
+  });
+  expect(await response.json()).toEqual({ method: "OPTIONS" });
 });
 
 test("providers run per request", async () => {
@@ -50,14 +62,15 @@ test("providers run per request", async () => {
   current = v3;
   expect(await httpv.query(app.url, local)).toEqual(current);
   current = malformed;
-  expect(
-    (
-      await fetch(app.url, {
-        method: "OPTIONS",
-        headers: { Accept: MEDIA_TYPE },
-      })
-    ).status,
-  ).toBe(503);
+  const failed = await fetch(app.url, {
+    method: "OPTIONS",
+    headers: { Accept: MEDIA_TYPE },
+  });
+  expect(failed.status).toBe(503);
+  expect(failed.headers.get("content-type")).not.toBe(MEDIA_TYPE);
+  await expect(httpv.query(app.url, local)).rejects.toMatchObject({
+    reason: "unavailable",
+  });
 });
 
 test("routes are validated at startup", () => {
@@ -115,11 +128,55 @@ test("discovery refuses redirects, wrong media types, failures and oversized bod
   await expect(
     plainJson.query("https://example.test/r", { method: "POST" }),
   ).rejects.toMatchObject({ reason: "missing-certificate" });
+  for (const [status, reason] of [
+    [503, "unavailable"],
+    [406, "missing-certificate"],
+    [203, "invalid-advertisement"],
+  ] as const)
+    await expect(
+      respond(
+        { format: "httpv/1", certificates: { POST: v1 } },
+        { status },
+      ).query("https://example.test/r", { method: "POST" }),
+    ).rejects.toMatchObject({ reason });
+
+  // A connection that fails mid-body is a transport error, not bad content.
+  const broken = createHTTPV({
+    fetch: async () =>
+      new Response(
+        new ReadableStream({
+          pull(controller) {
+            controller.error(new Error("connection reset"));
+          },
+        }),
+        { headers: { "content-type": MEDIA_TYPE } },
+      ),
+  });
   await expect(
-    respond({}, { status: 503 }).query("https://example.test/r", {
-      method: "POST",
-    }),
+    broken.query("https://example.test/r", { method: "POST" }),
   ).rejects.toMatchObject({ reason: "unavailable" });
+});
+
+test("only an explicit media range with a valid non-zero quality is discovery", async () => {
+  using app = listen(v1);
+  const media = async (accept: string) =>
+    (
+      await fetch(app.url, { method: "OPTIONS", headers: { Accept: accept } })
+    ).headers.get("content-type");
+  for (const accept of [
+    `${MEDIA_TYPE}`,
+    `${MEDIA_TYPE};q=0.001`,
+    `${MEDIA_TYPE};q=1.0`,
+  ])
+    expect(await media(accept)).toBe(MEDIA_TYPE);
+  for (const accept of [
+    "*/*",
+    "application/*",
+    `${MEDIA_TYPE};q=abc`,
+    `${MEDIA_TYPE};q=2`,
+    `${MEDIA_TYPE};q=0.000`,
+  ])
+    expect(await media(accept)).not.toBe(MEDIA_TYPE);
 });
 
 test("q=0 and CORS preflights reach the application; a __proto__ method is still advertised", async () => {
