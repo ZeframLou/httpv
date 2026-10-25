@@ -1,37 +1,38 @@
 # Using HTTPV
 
+The [README](../README.md) explains the concepts: certificates, claims,
+identities, axioms, and requirements.
+
 ## Install
 
-The npm packages are not published yet. Until they are, use the
-[tarball workflow](DEVELOPMENT.md#check-unpublished-packages). After publication:
-
 ```sh
-npm install httpv
+npm install httpv zklean
 ```
 
-You can also use `bun add httpv`. HTTPV runs on [Bun](https://bun.sh/) 1.4.4 or
-newer. For TypeScript checking, add `@types/bun` as a development dependency.
+You can also use `bun add httpv zklean`. HTTPV runs on [Bun](https://bun.sh/)
+1.4.4 or newer. For TypeScript checking, add `@types/bun` as a development
+dependency. Writing requirements also needs the
+[ZKLean CLI](https://github.com/ZeframLou/zklean).
 
 From a source checkout, `bun run example` serves three versions of a real
 certificate and blocks requests once the third breaks the client's
-requirement. Its certificates are being regenerated for the current format, so
-it fails until they are.
+requirement. Its committed certificates use an older format, so it currently
+blocks all three versions with `unknown (unavailable)`.
 
 ## Serve a certificate
 
-Generate each endpoint's certificate with
-[ZKLean](https://github.com/ZeframLou/zklean-dist) before deployment. A
-certificate is a few hundred bytes:
+Generate each endpoint's certificate with `zklean prove` before deployment. A
+certificate is typically under 1 KB; its size grows with the number of claims
+and axioms, not with the size of the proofs. It holds:
 
-- **claims:** the proved theorems, each with an **identity**, a hash of the
-  theorem's statement and of everything it refers to, including the endpoint's
-  Lean function;
+- **claims:** the proved theorems, each with its identity;
 - **axioms:** the unproved assumptions the proofs use, with their identities;
-- **proof:** 260 bytes that prove the claims under those axioms;
-- **source:** the URL of the Lean export the certificate was proved from, which
-  `zklean prove` writes beside the certificate. Publish that file so clients
-  can review what the identities mean. To keep proofs private, prove from a
-  module that states the claims as axioms; the identities are the same.
+- **proof:** 260 bytes proving the claims under those axioms;
+- **source:** the URL where you publish the Lean export behind the
+  identities. `zklean prove` writes that export (`CERT.ndjson`) beside the
+  certificate; pass its URL with `--source`. To keep proofs private, publish
+  at that URL an export of a module that states the claims as axioms instead;
+  identities do not cover proofs, so they are the same.
 
 Wrap your existing Fetch handler:
 
@@ -50,9 +51,11 @@ Bun.serve({
 });
 ```
 
-HTTPV answers `OPTIONS` requests that accept `application/httpv+json`. Every
-other request goes to your handler, including CORS preflight requests, so your
-CORS policy applies as usual. Serving needs no verifier. Paths match exactly.
+HTTPV answers discovery: `OPTIONS` requests that ask for
+`application/httpv+json`. Every other request goes to your handler, including
+`OPTIONS` for paths without certificates and CORS preflight requests. Paths
+match exactly and the query is ignored. `serve` validates static certificates
+when it is called.
 
 Give each endpoint its own certificate, with claims about that endpoint's
 behavior, so changing one endpoint never disturbs clients of another.
@@ -64,7 +67,8 @@ every discovery request:
 "POST /reservations": () => Bun.file("./certs/reservations.json").json(),
 ```
 
-Serve over HTTPS, and deploy each certificate with the behavior it describes.
+To let browsers on other origins read certificates, wrap the handler `serve`
+returns and add your CORS headers to its responses.
 
 ## Create a client
 
@@ -87,7 +91,7 @@ entire certificate.
 
 ## Write your requirements
 
-Your **requirements** are the claims your code relies on, by name and identity:
+Your requirements are a JSON file of claims and identities:
 
 ```json
 {
@@ -96,33 +100,35 @@ Your **requirements** are the claims your code relies on, by name and identity:
 }
 ```
 
-Write them from Lean code you have reviewed. To get the API's code, fetch the
-source its certificate names. ZKLean checks the export and fails unless every
-identity matches the certificate, so a wrong pointer cannot mislead you, and it
-never runs what it downloads:
+1. Get the API's Lean code and review the theorems your code relies on.
+2. Generate requirements from that code, naming those theorems:
+
+   ```sh
+   zklean requirements --project vendor/inventory --module Inventory \
+     --claims Inventory.reservation_safe --out requirements.json
+   ```
+
+   You can also state the claims yourself, as `axiom`s in your own module:
+   an identity covers a statement, not its proof, so an axiom matches a theorem
+   with the same statement.
+3. Commit `requirements.json`.
+
+If you only have the API's certificate, save it with
+`httpv.query(url, { method })`, then fetch the export it names. ZKLean checks
+the export and fails unless every identity matches the certificate, and never
+runs what it downloads:
 
 ```sh
 zklean fetch --certificate reservations.json --out vendor/inventory.ndjson
+zklean requirements --export vendor/inventory.ndjson \
+  --claims Inventory.reservation_safe --out requirements.json
 ```
 
-State the claims you rely on in a Lean module, then generate the requirements
-from it and commit the result:
-
-```sh
-zklean requirements --project specs --module Requirements \
-  --claims Inventory.reservation_safe --out specs/requirements.json
-```
-
-The module can state claims as `axiom`s: an identity covers what a declaration
-states, not how it is proved, so an axiom matches a theorem with the same
-statement.
-
-- Make sure the claims are about the function the endpoint implements. Their
-  identities then fix that function's definition.
-- If your code needs a weaker property than the API certifies, prove it from
-  the API's claims in your own Lean code and require the API's claims.
-- Keep requirements under your control. Copying whatever the server advertises
-  would defeat the check.
+Make sure the claims are about the function the endpoint implements; their
+identities then fix that function's definition. If your code needs a weaker
+property than the API certifies, prove it from the API's claims in your own
+Lean code and require the API's claims. Never copy requirements from the
+certificate you are about to check without reviewing them.
 
 ## Check an endpoint
 
@@ -135,8 +141,8 @@ import { httpv } from "./httpv.ts";
 const inventory = {
   url: "https://inventory.example.com/reservations",
   method: "POST",
-  requirements: "./specs/requirements.json",
-  axioms: { propext: standardAxioms.propext },
+  requirements: "./requirements.json", // relative to the working directory
+  axioms: standardAxioms, // Lean's propext, Quot.sound and Classical.choice
 };
 
 const result = await httpv.check(inventory);
@@ -147,27 +153,31 @@ if (result.status !== "verified")
 `check` fetches the endpoint's certificate, verifies it, and compares its claim
 identities with your requirements. It never throws.
 
-| Status         | Meaning                                                              | Reason                 |
-| -------------- | -------------------------------------------------------------------- | ---------------------- |
-| `verified`     | The certificate is valid and proves every required claim.            | `exact-match`          |
+| Status         | Meaning                                                               | Reason                 |
+| -------------- | --------------------------------------------------------------------- | ---------------------- |
+| `verified`     | The certificate is valid and proves every required claim.             | `exact-match`          |
 | `incompatible` | The certificate is valid, but a required claim is missing or changed. | `requirements-not-met` |
-| `unknown`      | Nothing could be established.                                        | See below              |
+| `unknown`      | Nothing could be established.                                         | See below              |
 
-`unknown` reasons are `unavailable`, `missing-certificate` and
-`invalid-advertisement` for discovery; `invalid-certificate`,
-`forbidden-axiom`, `axiom-mismatch` and `verifier-unavailable` for the
-certificate; `invalid-requirements` for your requirements file; and `timeout`,
-`expired` and `stopped` from a monitor.
+`unknown` reasons:
+
+- discovery: `unavailable` (network, timeout or server error),
+  `missing-certificate` (no certificate for this method), and
+  `invalid-advertisement` (a malformed discovery response);
+- the certificate: `invalid-certificate`, `forbidden-axiom`, `axiom-mismatch`,
+  and `verifier-unavailable`;
+- your configuration: `invalid-requirements`, including requirements with no
+  claims;
+- a monitor: `timeout`, `expired`, and `stopped`.
 
 The server may certify extra claims. Because identities hash names and content,
-a theorem with the same name but a changed statement, or about a redefined
+a theorem with the same name but a changed statement, or about a changed
 function, never matches.
 
-`axioms` lists the unproved assumptions you accept, by name and identity.
-`standardAxioms` from ZKLean holds Lean's `propext`, `Quot.sound`, and
-`Classical.choice`; `{}` accepts only certificates that use none. A certificate
-using an axiom you did not list is `unknown / forbidden-axiom`, and one whose
-axiom has a different identity is `unknown / axiom-mismatch`.
+`axioms` lists the axioms you accept, by name and identity. `{}` accepts only
+certificates that use none. A certificate using an axiom you did not list is
+`unknown / forbidden-axiom`, and one whose axiom has a different identity is
+`unknown / axiom-mismatch`.
 
 For lower-level control, `httpv.query(url, { method })` returns the endpoint's
 certificate, throwing a `DiscoveryError` if discovery fails, and
@@ -177,8 +187,7 @@ gives up after `timeout` milliseconds, 10 s by default, even if you also pass a
 
 ## Monitor updates
 
-APIs change without telling their clients. `watch` rechecks an endpoint on an
-interval:
+`watch` rechecks an endpoint on an interval:
 
 ```ts
 const monitor = httpv.watch(inventory, {
@@ -198,12 +207,13 @@ process.on("SIGTERM", () => monitor.stop());
 ```
 
 Call `requireVerified()` wherever a request depends on the endpoint. It throws
-unless the latest result is `verified` and younger than `maxAge`.
+unless the latest result is `verified` and younger than `maxAge`, measured from
+when that check started.
 
 `onChange` is for notifications. It runs on the first result, when a verified
-result expires, and whenever the status, reason, or certified statement
-changes. If it throws, monitoring continues, but the error is reported as
-uncaught, which ends a Bun process unless you handle `uncaughtException`.
+result expires, and whenever the status, reason, or certified claims change. If
+it throws, monitoring continues, but the error is reported as uncaught, which
+ends a Bun process unless you handle `uncaughtException`.
 
 | Setting    | Default              | Meaning                                        |
 | ---------- | -------------------- | ---------------------------------------------- |
@@ -212,12 +222,12 @@ uncaught, which ends a Bun process unless you handle `uncaughtException`.
 | `maxAge`   | `interval + timeout` | Age at which a verified result stops counting. |
 | `signal`   | none                 | Stops the monitor when aborted.                |
 
-`monitor.refresh()` runs a check now; simultaneous calls share one.
-`monitor.current` returns the latest result, and `stop()` ends polling and
-invalidates the result. Polling cannot tell you what the server does between
-checks.
+`monitor.refresh()` runs a check now; simultaneous calls share one, and a
+monitor never runs two checks at once. `monitor.current` returns the latest
+result, and `stop()` ends polling and invalidates the result.
 
 ## Local development
 
-HTTPS is required and redirects are rejected. For a local server, add
-`allowInsecureHttp: true` to the dependency.
+HTTPS is required and redirects are rejected. For a server on this machine
+(`localhost` or a loopback address), add `allowInsecureHttp: true` to the
+dependency.
