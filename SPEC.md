@@ -56,7 +56,7 @@ This document places requirements on three roles:
 - a **server**: an origin server that publishes certificates (Sections 4.1
   and 4.2);
 - a **client**: software that discovers and checks certificates (Sections 3.2,
-  4.1, 4.3, 4.4, 5, 7.5 and 7.6);
+  4.1, 4.3, 4.4, 5, and 7.2 to 7.7);
 - a **monitor**: a client component that repeats checks and gates dependent
   requests (Sections 6 and 7.7).
 
@@ -177,8 +177,9 @@ The client MUST use the `https` scheme. It MAY use `http`, when the user has
 explicitly allowed it, for a host that is a loopback IP address or the name
 `localhost` [RFC6761, Section 6.3]. The target URI MUST NOT contain userinfo
 [RFC9110, Section 4.2.4] or a fragment [RFC3986]. The
-client SHOULD send `Cache-Control: no-cache` [RFC9111] and MUST NOT follow
-redirects.
+client SHOULD send `Cache-Control: no-cache` [RFC9111], for intermediaries
+that cache `OPTIONS` responses although [RFC9110] makes them uncacheable
+(Section 7.5), and MUST NOT follow redirects.
 
 An `OPTIONS` request is a discovery request only if all of the following hold.
 A server MUST process any other `OPTIONS` request as an ordinary request:
@@ -209,7 +210,13 @@ SHOULD NOT exceed 64 KiB:
 {
   "format": "httpv/1",
   "certificates": {
-    "POST": { "format": "zklean/1", "claims": {…}, "axioms": {…}, "proof": "…", "source": "…" }
+    "POST": {
+      "format": "zklean/1",
+      "claims": { … },
+      "axioms": { … },
+      "proof": "…",
+      "source": "…"
+    }
   }
 }
 ```
@@ -235,9 +242,9 @@ publish only certificates whose `source` is an `https` URL (Section 7.6).
 
 If the server cannot produce a certificate it publishes for the path, it MUST
 respond with a `5xx` status such as `503 (Service Unavailable)`, and the
-response MUST NOT be labeled `application/httpv+json`. A server that builds the whole response at once makes
-one endpoint's failure affect its siblings; this document does not define a
-partial response.
+response MUST NOT be labeled `application/httpv+json`. A server that builds
+the whole response at once makes one endpoint's failure affect its siblings;
+this document does not define a partial response.
 
 A server SHOULD publish, under each method, a certificate whose claims are
 about that endpoint, so that a change to one endpoint does not disturb clients
@@ -281,8 +288,8 @@ A client checks an endpoint's certificate against its requirements and axiom
 policy:
 
 1. **Verify.** Verify the certificate as defined by ZKLean [ZKLEAN], with a
-   verifier and verifying key that the client selected in advance. Discovery
-   MUST NOT select either. Every entry of the certificate's `axioms` MUST
+   verifier and verifying key that the client selected in advance. The client
+   MUST NOT let the discovery response select either. Every entry of the certificate's `axioms` MUST
    appear in the axiom policy with the same identity.
 2. **Compare.** Every entry of the requirements' `claims` MUST appear in the
    certificate's `claims` with the same identity. The certificate MAY contain
@@ -296,8 +303,8 @@ requires the certified claims.
 Comparison by identity is sound because an identity binds the names and
 content of everything a statement refers to: equal identities mean the same
 statement about the same operations. A renamed claim, a changed statement, or
-a changed operation therefore never matches. So does a refactored operation
-that still satisfies the claim; its requirements then need review.
+a changed operation therefore never matches. Neither does a refactored
+operation that still satisfies the claim; its requirements then need review.
 
 ### 5.2. Results
 
@@ -340,7 +347,9 @@ substitute for that test.
 ### 7.1. What a client verifies and what it trusts
 
 A client verifies that the certified claims have valid proofs under the listed
-axioms, assuming the soundness of the ZKLean proof system and of Lean's kernel.
+axioms, assuming the soundness of ZKLean's pinned checker (Nanoda, run inside
+SP1), of SP1, and of the Groth16 proof system, including the integrity of its
+trusted setup.
 It trusts the origin server to run code that behaves as the certified operation
 does, and to publish claims about the endpoint they are published for. HTTPV
 cannot detect a server that behaves differently while publishing an unchanged
@@ -399,9 +408,10 @@ it only to obtain Lean declarations, MUST discard the whole export unless it
 reproduces every certified identity [ZKLEAN], and MUST NOT execute content
 fetched from it. A client MUST NOT dereference a `source` that is not
 an `https` URL when the certificate came over the network, so that a
-certificate cannot direct it to local files. It SHOULD NOT dereference a
-`source` whose host resolves to a loopback, link-local, or private address
-unless configured to, and MUST bound the size of what it fetches.
+certificate cannot direct it to local files; this applies to every redirect it
+follows. It SHOULD NOT dereference a `source` whose host resolves to a
+loopback, link-local, or private address unless configured to, and MUST bound
+the size of what it fetches.
 
 ### 7.7. Resource exhaustion
 
@@ -443,9 +453,9 @@ accepts.
 
 This draft requests no registration yet. A registration in the standards tree
 requires an IETF-approved specification with the IETF as change controller
-[RFC6838, Section 3.1]. Until then, deployments use the name below without
-registration, at the risk that a registration changes it. The template for a
-future registration is:
+[RFC6838, Section 3.1]. Until then, the name below is for experimental use
+only, and a registration may change it. The template for a future
+registration is:
 
 - **Type name:** application
 - **Subtype name:** httpv+json
@@ -467,8 +477,8 @@ future registration is:
   - Magic number(s): N/A
   - File extension(s): N/A
   - Macintosh file type code(s): N/A
-- **Person and email address to contact for further information:** to be
-  assigned on registration.
+- **Person and email address to contact for further information:** IESG
+  <iesg@ietf.org>.
 - **Intended usage:** COMMON
 - **Restrictions on usage:** none
 - **Author:** see Appendix B.
@@ -530,7 +540,7 @@ requirements from it; that gives the identity of the service's theorem. Then:
 | ------------------------------------------------- | ------------------------------------------------------------------------- |
 | Version 1, proving `conserves`                    | `verified`                                                                |
 | Version 2, proving `conserves` and a second claim | `verified`; extra claims are allowed                                      |
-| Version 3, accepting backorders                   | `incompatible`; the operation changed, so `conserves` has a new identity |
+| Version 3, accepting backorders                   | `incompatible`; the operation and the statement changed, so `conserves` has a new identity |
 | Version 2 with one proof byte altered             | `unknown`; the certificate does not verify                                |
 
 ## Appendix B. Author

@@ -1,10 +1,10 @@
 # HTTPV
 
-HTTPV (HTTP Verified) lets your code notice, before it sends a request, that an
-API it depends on no longer promises the behavior your code relies on. It is for teams
-whose code depends on another team's API, and for API teams that want to make
-promises clients can check by machine. HTTPV is a small HTTP protocol and a
-TypeScript library for Bun.
+HTTPV (HTTP Verified) is an HTTP protocol and TypeScript library for Bun that
+lets your code notice, before it sends a request, that an API it depends on no
+longer promises the behavior your code relies on. It is for teams whose code
+depends on another team's API, and for API teams that want to make promises
+clients can check by machine.
 
 ## Why
 
@@ -20,8 +20,8 @@ statement about that function, proves it, and publishes the proof next to the
 endpoint. Your client lists the guarantees it relies on and rechecks the proof
 on a schedule:
 
-- If the service adds guarantees without changing the function yours are
-  about, the check passes.
+- If the service adds guarantees without changing the function your
+  guarantees describe, the check passes.
 - If it drops or changes a guarantee you rely on, or changes that function at
   all, the check fails, so your code can block dependent requests, switch
   provider, or alert someone. Even a harmless refactor fails until you review
@@ -62,18 +62,18 @@ Ordinary requests and responses are unchanged.
 ```
 
 Proving happens once per release, offline, and takes tens of minutes to hours.
-Checking is cheap: ZKLean's inventory example compiles to a 381 KB Lean export
-but a 624-byte certificate, and the client verifies it with no Lean
-installation.
+Checking is cheap: ZKLean's inventory example compiles to a 381 KB export of
+Lean declarations but a 624-byte certificate, and the client verifies it with
+no Lean installation.
 
 ## Trust model
 
 Clients check each certificate's cryptographic proof themselves, trusting only
-ZKLean's pinned verifier, their own reviewed requirements, and the axioms they
-accept. They still trust
-the server to run code that behaves as its Lean function describes. HTTPV
-cannot detect a server that misbehaves behind an unchanged certificate, or a
-change between two checks.
+ZKLean's verifier and the key built into its SDK, their own reviewed
+requirements, and the axioms they accept. They still trust the server to run
+code that behaves as its Lean function describes. HTTPV cannot detect a server
+that misbehaves behind an unchanged certificate, or a change between two
+checks.
 
 ## Get started
 
@@ -125,7 +125,8 @@ await fetch("https://inventory.example.com/reservations", { method: "POST" });
 [`examples/upgrades.ts`](examples/upgrades.ts) serves three versions of an
 endpoint: version 2 adds a guarantee and should pass; version 3 accepts
 backorders and should be blocked. Its certificates predate the current format,
-so today it reports `unknown (unavailable)` for all three.
+so today it reports `unknown (unavailable)` for all three. Run it from a clone
+with `bun run example` ([setup](docs/DEVELOPMENT.md)).
 
 The [usage guide](docs/USAGE.md) covers writing requirements, accepting
 axioms, and monitoring. The [protocol specification](SPEC.md) defines the wire

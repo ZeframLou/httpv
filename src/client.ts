@@ -21,9 +21,6 @@ import type {
 /** Every client accepts responses this large (SPEC 4.3). */
 const MAX_DISCOVERY_BYTES = 64 * 1024;
 
-const positiveInteger = (value: unknown): value is number =>
-  Number.isSafeInteger(value) && (value as number) > 0;
-
 /** Plain HTTP is only for a server on this machine. */
 const loopback = (host: string) =>
   host === "localhost" || host === "[::1]" || /^127\.\d+\.\d+\.\d+$/.test(host);
@@ -94,7 +91,7 @@ export function createHTTPV(options: ClientOptions = {}) {
         "unavailable",
         "HTTPV requires HTTPS (allowInsecureHttp permits http to loopback only)",
       );
-    if (target.username || target.password || target.hash)
+    if (target.username || target.password || target.href.includes("#"))
       throw new DiscoveryError("unavailable", "invalid discovery URL");
     let response: Response;
     try {
@@ -148,10 +145,9 @@ export function createHTTPV(options: ClientOptions = {}) {
 
     let requirements: Requirements;
     try {
+      // ZKLean rejects requirements with no claims, which would accept any
+      // valid certificate.
       requirements = await loadRequirements(requirement.requirements);
-      // Requiring nothing would accept any valid certificate.
-      if (!Object.keys(requirements.claims).length)
-        throw new Error("requirements list no claims");
     } catch (error) {
       return {
         ...identity,
@@ -194,11 +190,14 @@ export function createHTTPV(options: ClientOptions = {}) {
     const { interval, timeout = 10_000, onChange } = settings;
     const maxAge = settings.maxAge ?? Math.min(interval + timeout, 0x7fffffff);
     for (const [name, value] of Object.entries({ interval, timeout, maxAge }))
-      if (!positiveInteger(value) || value > 0x7fffffff)
+      if (!Number.isInteger(value) || value < 1 || value > 0x7fffffff)
         throw new RangeError(`invalid ${name}`);
     const stopper = new AbortController();
     const stopped = (): Result => ({ status: "unknown", reason: "stopped" });
     let latest: Result | undefined;
+    // When the latest result's check started, on the monotonic clock: ages and
+    // timeouts must not move when the wall clock is adjusted.
+    let latestStart = 0;
     let inflight: Promise<Result> | undefined;
     let timer: Timer | undefined;
     let expiry: Timer | undefined;
@@ -209,8 +208,9 @@ export function createHTTPV(options: ClientOptions = {}) {
     // result that arrives late, even one that won the race, is discarded. A
     // check abandoned that way still runs, so the next one waits for it: one
     // check at a time, however slowly the verifier answers.
-    const cycle = async (): Promise<Result> => {
-      const started = Date.now();
+    const cycle = async (): Promise<[Result, number]> => {
+      const started = performance.now();
+      const checkedAt = Date.now();
       const deadline = AbortSignal.any([
         stopper.signal,
         AbortSignal.timeout(timeout),
@@ -227,10 +227,10 @@ export function createHTTPV(options: ClientOptions = {}) {
       })();
       running = work;
       const result = await Promise.race([work, aborted]);
-      if (!result || Date.now() - started >= timeout)
-        return { status: "unknown", reason: "timeout", checkedAt: started };
       // A result is as old as the request that produced it.
-      return { ...result, checkedAt: started };
+      if (!result || performance.now() - started >= timeout)
+        return [{ status: "unknown", reason: "timeout", checkedAt }, started];
+      return [{ ...result, checkedAt }, started];
     };
 
     const notify = (result: Result): void => {
@@ -245,44 +245,43 @@ export function createHTTPV(options: ClientOptions = {}) {
       }
     };
 
-    const expired = (): Result => ({
-      status: "unknown",
-      reason: "expired",
-      checkedAt: latest!.checkedAt!,
-    });
-
-    const refresh = (): Promise<Result> => {
-      if (stopper.signal.aborted) return Promise.resolve(stopped());
-      inflight ??= cycle().then((result) => {
-        inflight = undefined;
-        if (stopper.signal.aborted) return stopped();
-        latest = result;
-        clearTimeout(timer);
-        clearTimeout(expiry);
-        // Checks start at a fixed rate, so with the default maxAge a verified
-        // result stays current until the next one arrives.
-        const since = (at: number) =>
-          Math.max(0, latest!.checkedAt! + at - Date.now());
-        timer = setTimeout(refresh, since(interval));
-        if (latest.status === "verified")
-          expiry = setTimeout(() => notify(expired()), since(maxAge));
-        // A result that took longer than maxAge is already expired.
-        const now = current()!;
-        notify(now);
-        return now;
-      });
-      return inflight;
-    };
+    const age = () => performance.now() - latestStart;
 
     // Timers can fire late, so freshness is also checked on every read.
     const current = (): Result | undefined => {
       if (stopper.signal.aborted) return stopped();
-      if (
-        latest?.status === "verified" &&
-        Date.now() - latest.checkedAt! >= maxAge
-      )
-        return expired();
+      if (latest?.status === "verified" && age() >= maxAge)
+        return {
+          status: "unknown",
+          reason: "expired",
+          checkedAt: latest.checkedAt!,
+        };
       return latest && { ...latest };
+    };
+
+    const refresh = (): Promise<Result> => {
+      if (stopper.signal.aborted) return Promise.resolve(stopped());
+      inflight ??= cycle().then(([result, started]) => {
+        inflight = undefined;
+        if (stopper.signal.aborted) return stopped();
+        latest = result;
+        latestStart = started;
+        clearTimeout(timer);
+        clearTimeout(expiry);
+        // Checks start at a fixed rate, so with the default maxAge a verified
+        // result stays current until the next one arrives.
+        timer = setTimeout(refresh, Math.max(0, interval - age()));
+        if (latest.status === "verified")
+          expiry = setTimeout(
+            () => notify(current()!),
+            Math.max(0, maxAge - age()),
+          );
+        // A result that took longer than maxAge is already expired, and
+        // onChange may stop the monitor.
+        notify(current()!);
+        return current()!;
+      });
+      return inflight;
     };
 
     const stop = (): void => {

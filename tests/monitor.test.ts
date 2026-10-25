@@ -7,17 +7,16 @@ import { axioms, gate, inventory, listen, slow } from "./helpers.ts";
 function setup() {
   const fixtures = inventory();
   let current = fixtures.v1;
-  let served = 0;
+  /** When each discovery request arrived. */
+  const served: number[] = [];
   const app = listen(() => {
-    served++;
+    served.push(performance.now());
     return current;
   });
   return {
     ...fixtures,
     app,
-    get served() {
-      return served;
-    },
+    served,
     dependency: {
       url: app.url,
       method: "POST",
@@ -69,12 +68,12 @@ test("expiry is notified, and so is recovery with the same certificate", async (
   const reasons: string[] = [];
   const monitor = client(backend).watch(dependency, {
     interval: 60_000,
-    maxAge: 50,
+    maxAge: 500,
     onChange: (result) => reasons.push(result.reason),
   });
   try {
     await monitor.refresh();
-    await Bun.sleep(100);
+    await Bun.sleep(700);
     await monitor.refresh();
     expect(reasons).toEqual(["exact-match", "expired", "exact-match"]);
   } finally {
@@ -108,14 +107,16 @@ test("a result's age counts from its request, so a slow check can arrive expired
 test("checks start at a fixed rate", async () => {
   const env = setup();
   using _ = env.app;
-  const monitor = client(slow(env.backend, () => Bun.sleep(80))).watch(
+  const monitor = client(slow(env.backend, () => Bun.sleep(200))).watch(
     env.dependency,
-    { interval: 100 },
+    { interval: 400 },
   );
   try {
-    // Started at 0 and 100 ms; waiting for completion would start at 180 ms.
-    await Bun.sleep(140);
-    expect(env.served).toBe(2);
+    // Fixed rate: the second check starts 400 ms after the first; waiting for
+    // the first to finish would start it 600 ms after.
+    await Bun.sleep(550);
+    const [first, second] = env.served;
+    expect(second! - first!).toBeLessThan(500);
   } finally {
     monitor.stop();
   }
@@ -128,14 +129,14 @@ test("a verified result expires while a later check stalls, and the stalled chec
   let hang = false;
   const monitor = client(slow(backend, () => hang && stall.closed)).watch(
     dependency,
-    { interval: 60_000, timeout: 300, maxAge: 50 },
+    { interval: 60_000, timeout: 600, maxAge: 200 },
   );
   try {
     expect((await monitor.refresh()).status).toBe("verified");
     hang = true;
     publish(v2);
     const refresh = monitor.refresh();
-    await Bun.sleep(100);
+    await Bun.sleep(300);
     expect(monitor.current?.reason).toBe("expired");
     expect(() => monitor.requireVerified()).toThrow("expired");
     expect((await refresh).reason).toBe("timeout");
@@ -289,3 +290,13 @@ function inventoryDependency() {
     },
   };
 }
+
+test("stopping from onChange makes the pending refresh report stopped", async () => {
+  const { backend, app, dependency } = setup();
+  using _ = app;
+  const monitor = client(backend).watch(dependency, {
+    interval: 60_000,
+    onChange: () => monitor.stop(),
+  });
+  expect((await monitor.refresh()).reason).toBe("stopped");
+});

@@ -5,20 +5,15 @@ identities, axioms, and requirements.
 
 ## Install
 
-HTTPV is not yet published to npm. After publication:
-
-```sh
-npm install httpv
-```
-
-You can also use `bun add httpv`. Either installs its peer dependency `zklean`.
-HTTPV runs on [Bun](https://bun.sh/) 1.4.4 or newer. For TypeScript checking,
+Install as in the [README](../README.md#get-started). For TypeScript checking,
 add `@types/bun` as a development dependency.
 
 Generating certificates and requirements needs the
 [ZKLean CLI](https://github.com/ZeframLou/zklean), run from a ZKLean checkout
-as `bun src/cli.ts`; this guide writes it as `zklean`. Checking certificates
-needs only the npm packages.
+as `bun src/cli.ts` with its native checker and `lean4export` built (ZKLean's
+`CONTRIBUTING.md`); this guide writes it as `zklean`. Lean projects must select
+`leanprover/lean4:v4.36.0-rc1` in `lean-toolchain`. Checking certificates needs
+only the npm packages.
 
 ## Serve a certificate
 
@@ -44,8 +39,8 @@ and axioms, not with the size of the proofs. It holds:
 - **proof:** the cryptographic proof of the claims under those axioms;
 - **source:** the URL where you publish the **Lean export**, a file of the
   compiled Lean declarations the identities are computed from. `zklean prove`
-  writes it (`CERT.ndjson`) beside the certificate; pass its URL with
-  `--source`. To keep proofs private, publish at that URL an export of a module
+  writes it (`certs/reservations.ndjson`) beside the certificate; pass its URL
+  with `--source`. To keep proofs private, publish at that URL an export of a module
   that states the claims as axioms instead; identities do not cover proofs, so
   they are the same.
 
@@ -102,8 +97,8 @@ client needs no native executable, prover, or Lean process.
 
 To use another verifier, pass `createHTTPV({ backend })`. A backend has an
 `identity` string describing its trusted configuration and an async
-`verify(certificate)` returning a boolean. It is trusted to authenticate the
-entire certificate.
+`verify(certificate)` returning a boolean. It is trusted to decide whether the
+proof establishes the certificate's claims and axioms.
 
 ## Write your requirements
 
@@ -124,7 +119,9 @@ Your requirements are a JSON file of claims and identities:
      --claims Inventory.reservation_safe --out requirements.json
    ```
 
-   You can also state the claims yourself, as `axiom`s in your own module:
+   `--project` builds that source with Lake, which runs its build code, so
+   review or sandbox third-party source first. You can also state the claims
+   yourself, as `axiom`s in your own module:
    an identity covers a statement, not its proof, so an axiom matches a theorem
    with the same statement.
 3. Commit `requirements.json`.
@@ -133,29 +130,6 @@ Make sure the claims are about the function the endpoint implements; their
 identities then fix that function's definition. If your code needs a weaker
 property than the API certifies, prove it from the API's claims in your own
 Lean code and require the API's claims.
-
-If you have only the API's certificate, you can still confirm which
-declarations it names. Save the certificate and fetch its export; ZKLean fails
-unless every identity matches, and never runs what it downloads:
-
-```ts
-const certificate = await httpv.query(
-  "https://inventory.example.com/reservations",
-  { method: "POST" },
-);
-await Bun.write("reservations.json", JSON.stringify(certificate));
-```
-
-```sh
-zklean fetch --certificate reservations.json --axioms propext \
-  --out vendor/inventory.ndjson
-zklean requirements --export vendor/inventory.ndjson \
-  --claims Inventory.reservation_safe --out requirements.json
-```
-
-`fetch` verifies the certificate under the axioms you list, then downloads its
-`https` source. The export holds compiled declarations, not readable Lean, so
-review the statements in the API's Lean source before requiring them.
 
 ## Check an endpoint
 
@@ -198,9 +172,7 @@ identities with your requirements. It never throws.
   claims;
 - a monitor: `timeout`, `expired`, and `stopped`.
 
-The server may certify extra claims. Because identities hash names and content,
-a theorem with the same name but a changed statement, or about a changed
-function, never matches.
+The server may certify extra claims.
 
 `axioms` lists the axioms you accept, by name and identity. `{}` accepts only
 certificates that use none. A certificate using an axiom you did not list is
@@ -211,7 +183,7 @@ For lower-level control, `httpv.query(url, { method })` returns the endpoint's
 certificate, throwing a `DiscoveryError` if discovery fails, and
 `httpv.compare(certificate, inventory)` runs the rest of the check. Discovery
 gives up after `timeout` milliseconds, 10 s by default, even if you also pass a
-`signal`.
+`signal`; pass either in `query`'s options or as `check`'s second argument.
 
 ## Monitor updates
 

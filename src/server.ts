@@ -4,12 +4,15 @@ import type { Certificate, Handler, ServeOptions, Source } from "./types.ts";
 
 /** Whether `Accept` lists the HTTPV media type by name, not by a wildcard,
  * with no parameter but an optional weight above zero (RFC 9110, Section
- * 12.4.2). Commas inside quoted strings do not separate ranges. */
+ * 12.4.2). Quoted strings are blanked first: they only occur in parameters,
+ * which disqualify a range anyway, and may contain commas. */
 function acceptsDiscovery(accept: string | null): boolean {
-  return (accept ?? "").split(/,(?=(?:[^"]*"[^"]*")*[^"]*$)/).some((range) => {
+  const unquoted = (accept ?? "").replace(/"(?:\\.|[^"\\])*"/g, '""');
+  return unquoted.split(",").some((range) => {
     const [type, weight, extra] = range
       .split(";")
-      .map((part) => part.trim().toLowerCase());
+      .map((part) => part.trim().toLowerCase())
+      .filter((part, index) => index === 0 || part);
     if (type !== MEDIA_TYPE || extra !== undefined) return false;
     const q = weight && /^q=(0(\.\d{0,3})?|1(\.0{0,3})?)$/.exec(weight);
     return weight === undefined || (!!q && Number(q[1]) > 0);
@@ -25,10 +28,9 @@ function acceptsDiscovery(accept: string | null): boolean {
 export function serve({ routes, fetch }: ServeOptions): { fetch: Handler } {
   const paths = new Map<string, Map<string, Source>>();
   for (const [route, source] of Object.entries(routes)) {
-    const [method, path = "", extra] = route.split(" ");
+    const [method = "", path = "", extra] = route.split(" ");
     // A path the URL parser would rewrite could never match a request.
     if (
-      !method ||
       extra !== undefined ||
       path.includes("*") ||
       new URL(path, "http://host").pathname !== path

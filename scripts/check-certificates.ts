@@ -4,7 +4,7 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createVerifier, parseCertificate } from "zklean";
+import { parseCertificate } from "zklean";
 import { canonical, statement } from "zklean/encoding";
 import {
   certificates,
@@ -21,7 +21,6 @@ function same(path: string, actual: unknown, expected: unknown) {
   console.log(`${path}: matches its source`);
 }
 
-const { verify } = createVerifier();
 const temporary = await mkdtemp(join(tmpdir(), "httpv-check-"));
 try {
   const generated = join(temporary, "requirements.json");
@@ -46,11 +45,8 @@ try {
     );
     if (certificate.source !== sourceURL(model.out))
       throw new Error(`${model.out}: unexpected source ${certificate.source}`);
-    const result = await verify(certificate, { axioms: {} });
-    if (result.status !== "verified")
-      throw new Error(`${model.out}: ${JSON.stringify(result)}`);
-    // The repository is private, so check the committed export the source
-    // URL names instead of downloading it.
+    // fetch verifies the proof under no axioms, then checks that the committed
+    // export the source URL names reproduces every identity.
     await runZKLean([
       "fetch",
       "--certificate",

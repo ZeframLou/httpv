@@ -19,7 +19,7 @@ bun install --frozen-lockfile
 bun run check
 ```
 
-The published package depends on the npm `zklean@0.1.0` SDK instead, whose
+The published package peer-depends on the npm `zklean@0.1.0` SDK instead, whose
 embedded verifier means the tests and the example need only Bun.
 
 ## Current state
@@ -50,25 +50,25 @@ verifier.
 ## Regenerate artifacts
 
 These steps need a `ZeframLou/zklean` checkout at the pinned commit, built as
-CI builds it in `.github/workflows/check.yml`, with the environment variables
-CI sets: `ZKLEAN_CLI` (its `src/cli.ts`), `ZKLEAN_NATIVE`, `ZKLEAN_EXPORTER`,
-and `ZKLEAN_LAKE`.
+CI builds it in `.github/workflows/check.yml`, and `ZKLEAN_CLI` set to its
+`src/cli.ts`. ZKLean finds its other tools from the checkout.
 
 ```sh
 bun run check:certificates  # every artifact matches its re-checked source
 ```
 
-The repository is private, so the check verifies each committed export instead
-of downloading the certificate's source URL.
+The check verifies each committed export with `zklean fetch --from` instead of
+downloading the certificate's source URL.
 
 `bun run prove` regenerates the requirements and each certificate, with the
 Lean export it was proved from, which the certificate names as its source.
 Review the diff before committing.
 
-Proving also needs ZKLean's prover build, the SP1 circuits, and its released
-**guest program**, the program that checks Lean proofs inside SP1, so that the
-proofs verify under the key pinned in the SDK. ZKLean's `CONTRIBUTING.md`
-describes all three; set `ZKLEAN_GUEST_ELF` to the guest. Proving takes tens
+Proving also needs ZKLean's prover build, the SP1 circuits, and the **guest
+program** that ZKLean's CI uploads as the `zklean-guest-elf` artifact: the
+program that checks Lean proofs inside SP1, so that the proofs verify under the
+key pinned in the SDK. ZKLean's `CONTRIBUTING.md` describes all three; set
+`ZKLEAN_GUEST_ELF` to that guest. Proving takes tens
 of minutes to hours and several GB of memory. Run one proof at a time and bound
 its resources, for example:
 
@@ -107,7 +107,8 @@ npm install /path/to/httpv/dist/zklean-0.1.0.tgz /path/to/httpv/dist/httpv-0.1.0
 
 ## Publish to npm
 
-Publish the `zklean@0.1.0` SDK first, then HTTPV. In each repository:
+Publish the `zklean@0.1.0` SDK first, after the checks in ZKLean's
+`CONTRIBUTING.md`, then HTTPV:
 
 ```sh
 bun run check

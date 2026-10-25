@@ -46,6 +46,8 @@ test("discovery needs HTTPS, except to loopback, and a well-formed request", asy
   );
   for (const [url, method] of [
     ["http://inventory.example/reservations", "POST"],
+    ["https://user@inventory.example/reservations", "POST"],
+    ["https://inventory.example/reservations#", "POST"],
     ["not a url", "POST"],
     [app.url, "BAD()"],
   ])
@@ -170,6 +172,8 @@ test("only an explicit media range with a valid non-zero weight is discovery", a
     `text/html, ${MEDIA_TYPE};q=0.001`,
     `${MEDIA_TYPE} ; q=1.0`,
     "APPLICATION/HTTPV+JSON;Q=1",
+    `${MEDIA_TYPE};`,
+    `${MEDIA_TYPE}, text/plain;x="a\\"b"`,
   ])
     expect(await media(accept)).toBe(MEDIA_TYPE);
   for (const accept of [
@@ -182,6 +186,7 @@ test("only an explicit media range with a valid non-zero weight is discovery", a
     `${MEDIA_TYPE}; q = 0.5`,
     `${MEDIA_TYPE};v=1`,
     `text/plain;x=",${MEDIA_TYPE},"`,
+    `text/plain;x="a, ${MEDIA_TYPE}, \\""`,
   ])
     expect(await media(accept)).not.toBe(MEDIA_TYPE);
   // A CORS preflight is the application's to answer.
