@@ -47,7 +47,7 @@ test("providers run per request, so the certificate and entrypoint change togeth
   expect(await httpv.query(app.url, local)).toEqual(advertise(v1));
   current = advertise(v3);
   expect(await httpv.query(app.url, local)).toEqual(current);
-  current = advertise(v1, "Missing.operation");
+  current = advertise(v1, "");
   expect(
     (
       await fetch(app.url, {
@@ -65,8 +65,8 @@ test("routes are validated at startup", () => {
       serve({ routes: { [route]: advertise(v1) }, fetch }),
     ).toThrow();
   expect(() =>
-    serve({ routes: { "POST /a": advertise(v1, "Missing.operation") }, fetch }),
-  ).toThrow("not a certified definition");
+    serve({ routes: { "POST /a": advertise(v1, "") }, fetch }),
+  ).toThrow("nonempty");
   expect(() =>
     serve({
       routes: { "POST /a": advertise(v1), "post /a": advertise(v1) },
@@ -83,7 +83,7 @@ test("discovery accepts only the closed httpv/1 envelope", async () => {
     { format: "httpv/2", contracts: { POST: advertise(v1) } },
     { format: "httpv/1", contracts: { POST: advertise(v1) }, extra: 1 },
     { format: "httpv/1", contracts: { POST: v1 } },
-    { format: "httpv/1", contracts: { POST: advertise(v1, "Missing.op") } },
+    { format: "httpv/1", contracts: { POST: advertise(v1, "") } },
   ])
     await expect(
       respond(body).query("https://example.test/r", { method: "POST" }),

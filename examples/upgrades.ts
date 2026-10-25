@@ -7,8 +7,8 @@ const load = (name: string) =>
   Bun.file(
     new URL(`inventory/certificates/${name}.json`, import.meta.url),
   ).json();
-const [v1, v2, v3, bridge, requirements] = await Promise.all(
-  ["v1", "v2", "v3", "bridge", "requirements"].map(load),
+const [v1, v2, v3, requirements] = await Promise.all(
+  ["v1", "v2", "v3", "requirements"].map(load),
 );
 const operation = "UnitInventory.POST_units";
 
@@ -28,8 +28,7 @@ const server = Bun.serve({
 });
 const url = `http://127.0.0.1:${server.port}/units`;
 
-// Client: requirements.json is what its proof assumes; the bridge derives it
-// from the supplier's V1 guarantee.
+// Client: requirements.json is the supplier claim its own proof assumes.
 const monitor = createHTTPV().watch(
   {
     url,
@@ -37,7 +36,6 @@ const monitor = createHTTPV().watch(
     allowInsecureHttp: true,
     operation,
     requirements,
-    bridge,
     axioms: {},
   },
   { interval: 60_000 },

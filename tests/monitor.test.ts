@@ -46,7 +46,7 @@ test("requireVerified follows the current contract and stops with the monitor", 
     const [a, b] = [monitor.refresh(), monitor.refresh()];
     expect(a).toBe(b);
     expect((await a).status).toBe("incompatible");
-    expect(() => monitor.requireVerified()).toThrow("operation-mismatch");
+    expect(() => monitor.requireVerified()).toThrow("requirements-not-met");
     // Unchanged results are not repeated; a new certificate is a change.
     expect(changes.map((r) => r.status)).toEqual([
       "verified",

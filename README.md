@@ -67,6 +67,6 @@ monitor.requireVerified(); // throws unless the current contract still holds
 
 [`examples/upgrades.ts`](examples/upgrades.ts) runs the whole workflow with
 real certificates: `bun run example`. The [usage guide](docs/USAGE.md) covers
-serving certificates, choosing requirements, bridges, and monitoring.
+serving certificates, choosing requirements, and monitoring.
 
 [Protocol specification](SPEC.md) · [Development](docs/DEVELOPMENT.md)

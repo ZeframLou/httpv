@@ -20,16 +20,14 @@ The key words MUST, MUST NOT, SHOULD, and MAY follow RFC 2119 and RFC 8174.
 - **Identity:** ZKLean's hash of a Lean declaration and everything it refers
   to, binding every constant name and its content. A proposition's identity
   covers its statement, not its proof.
-- **Certificate:** the identities of the claims it proves, the definitions
-  they are about, and the axioms the proofs use, plus a succinct proof and an
-  unproved pointer to their Lean source.
-- **Operation:** the Lean definition of an endpoint's behavior.
+- **Certificate:** the identities of the claims it proves and of the axioms
+  the proofs use, plus a succinct proof and an unproved pointer to their Lean
+  source.
+- **Operation:** the Lean function that defines an endpoint's behavior.
 - **Advertisement:** an operation name and a certificate for one HTTP method of
   one resource.
-- **Requirements:** the claims and definitions, by name and identity, that a
-  client's proof assumes about an endpoint.
-- **Bridge:** a certificate that proves the requirements while assuming the
-  advertised claims as axioms.
+- **Requirements:** the claims, by name and identity, that a client's proof
+  assumes about an operation.
 
 ## 3. Trust model
 
@@ -69,7 +67,6 @@ Vary: Accept
       "certificate": {
         "format": "zklean/1",
         "claims": { "Inventory.reservation_safe": "56b0…" },
-        "definitions": { "Inventory.POST_reservations": "9f2c…" },
         "axioms": { "propext": "b75a…" },
         "source": "https://example.com/inventory.ndjson",
         "proof": "base64:..."
@@ -88,12 +85,11 @@ not part of the proved statement. Clients MUST NOT rely on it except to obtain
 Lean declarations, and MUST discard any that do not reproduce the certified
 identities.
 
-`operation` MUST be nonempty and MUST be one of the certificate's
-`definitions`, which ZKLean only admits when the claims depend on them. The
-server MUST describe the behavior of that method and resource with that
+`operation` MUST be nonempty. It states which function in the certificate's
+claims the endpoint implements, so one certificate MAY serve several endpoints.
+The server MUST describe the behavior of that method and resource with that
 operation, and the operation MUST state the inputs it covers. Parameterized
-routes MAY share a certificate when the operation covers the whole parameter
-domain.
+routes MAY share an operation when it covers the whole parameter domain.
 
 The response MUST reflect what the server currently advertises. Servers SHOULD
 send `Cache-Control: no-store`. A resource without advertisements returns 404.
@@ -104,44 +100,37 @@ Clients MUST use HTTPS outside local development and MUST NOT follow redirects.
 ## 5. Compatibility
 
 The client's proof establishes `(R₁ ∧ … ∧ Rₙ) ⟹ S`, where `S` is its
-correctness specification and `Rᵢ` its requirements for dependency `i`. The
-proof stays applicable while each dependency's certified guarantees `Gᵢ`
-satisfy `Gᵢ ⟹ Rᵢ`. A valid certificate alone MUST NOT be treated as
-establishing this.
+correctness specification and `Rᵢ` are the claims it assumes about dependency
+`i`. The proof stays applicable while each dependency certifies every `Rᵢ`. A
+valid certificate alone MUST NOT be treated as establishing this.
 
-A client checks an advertisement against requirements and an expected
-operation in this order:
+A client checks an advertisement against its requirements and expected
+operation:
 
 1. **Certificate.** Verify the certificate with a client-selected verifier and
    reject axioms outside the client's policy. Discovery MUST NOT select the
    verifier or its keys.
-2. **Definitions.** The expected operation MUST be one of the required
-   definitions and MUST equal the advertised operation. Every required
-   definition MUST be certified with the same identity. A bridge cannot change
-   this outcome.
-3. **Exact match.** Every required claim is certified with the same identity.
-   Extra remote claims and definitions are permitted.
-4. **Bridge.** Otherwise, if the client supplies a bridge: verify it with an
-   axiom policy of the client's axioms plus the remote claims, rejecting a name
-   that appears in both with different identities. The bridge MUST certify
-   every required claim with the same identity.
+2. **Operation.** The advertised operation MUST equal the expected one.
+3. **Claims.** Every required claim MUST be certified with the same identity.
+   Extra remote claims are permitted.
 
-Comparison is identity equality. It is sound because identities bind names
-and content of the whole closure: equal identities mean the same statement
-about the same definitions.
-
-Names must therefore stay stable. A renamed or redefined operation requires new,
-reviewed requirements; HTTPV never maps one operation to another.
+Comparison is identity equality. It is sound because an identity binds the
+names and content of everything a statement refers to, including the
+operation's body: equal identities mean the same statement about the same
+function. The client MUST ensure its requirements are about the operation it
+expects. If its proof needs a weaker property, it proves that from the remote
+claims itself and requires those claims; HTTPV does not search for
+implications. Names must stay stable: a renamed or redefined operation needs
+new, reviewed requirements.
 
 ## 6. Results
 
 A check has one of three outcomes. Applications choose how to handle each.
 
-- **`verified`:** the certificate is valid and establishes the requirements by
-  exact match or bridge.
-- **`incompatible`:** the certificate is valid but the operation differs, or
-  neither an exact match nor a supplied bridge establishes the requirements.
-- **`unknown`:** discovery failed, the certificate or bridge is invalid, the
+- **`verified`:** the certificate is valid and certifies every required claim.
+- **`incompatible`:** the certificate is valid, but the operation differs or a
+  required claim is missing or different.
+- **`unknown`:** discovery failed, the certificate is invalid, the
   requirements are unusable, or the check did not finish.
 
 Implementations MUST NOT report `unknown` as `verified`.

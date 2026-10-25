@@ -12,36 +12,34 @@ const load = async (name: string) =>
   Bun.file(new URL(`${name}.json`, directory)).json();
 const operation = "UnitInventory.POST_units";
 
-// The example certificates predate identity certificates and are re-proved
-// separately; until then this test cannot run.
-const reproved = !Object.hasOwn(await load("v1"), "specs");
+// The example certificates are re-proved separately for the current format;
+// until then this test cannot run.
+const current = await load("v1");
+const reproved =
+  Object.hasOwn(current, "source") && !Object.hasOwn(current, "definitions");
 
 test.skipIf(!reproved)(
-  "real Groth16 certificates: upgrades, bridge and tampering",
+  "real Groth16 certificates: upgrades and tampering",
   async () => {
-    const [v1, v2, v3, bridge] = await Promise.all(
-      ["v1", "v2", "v3", "bridge"].map(async (name) =>
+    const [v1, v2, v3] = await Promise.all(
+      ["v1", "v2", "v3"].map(async (name) =>
         parseCertificate(await load(name)),
       ),
     );
-    const requirements = await load("requirements");
-    let current = advertise(v1!, operation);
-    using app = listen(() => current);
+    let served = advertise(v1!, operation);
+    using app = listen(() => served);
     const httpv = createHTTPV();
+    // Stated as an axiom in Requirements.lean; it matches V1's theorem.
     const dependency = {
       url: app.url,
       method: "POST",
       allowInsecureHttp: true,
       operation,
-      requirements: {
-        format: "zklean/requirements/1" as const,
-        claims: v1!.claims,
-        definitions: v1!.definitions,
-      },
+      requirements: await load("requirements"),
       axioms: {},
     };
     const check = (certificate: Certificate) => {
-      current = advertise(certificate, operation);
+      served = advertise(certificate, operation);
       return httpv.check(dependency);
     };
 
@@ -49,7 +47,7 @@ test.skipIf(!reproved)(
     expect(await check(v2!)).toMatchObject({ status: "verified" });
     expect(await check(v3!)).toMatchObject({
       status: "incompatible",
-      reason: "operation-mismatch",
+      reason: "requirements-not-met",
     });
 
     const tampered = structuredClone(v2!);
@@ -60,11 +58,6 @@ test.skipIf(!reproved)(
       status: "unknown",
       reason: "invalid-certificate",
     });
-
-    current = advertise(v2!, operation);
-    expect(
-      await httpv.check({ ...dependency, requirements, bridge: bridge! }),
-    ).toMatchObject({ status: "verified", reason: "bridge" });
   },
   120_000,
 );

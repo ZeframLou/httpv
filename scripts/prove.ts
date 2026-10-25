@@ -1,20 +1,8 @@
-/** Regenerate the example's requirements, bridge policy and certificates.
- * Each proof takes hours and writes the certificate and its source export. */
-import {
-  axiomFlags,
-  bridgePolicy,
-  certificates,
-  expectedBridgePolicy,
-  requirements,
-  source,
-  sourceURL,
-} from "./models.ts";
+/** Regenerate the example's requirements and certificates. Each proof takes
+ * minutes and writes the certificate beside the export it was proved from. */
+import { certificates, requirements, source, sourceURL } from "./models.ts";
 import { runZKLean } from "./zklean.ts";
 
-await Bun.write(
-  bridgePolicy,
-  JSON.stringify(await expectedBridgePolicy(), null, 2) + "\n",
-);
 await runZKLean([
   "requirements",
   ...source(requirements),
@@ -27,7 +15,6 @@ for (const model of certificates) {
   await runZKLean([
     "prove",
     ...source(model),
-    ...axiomFlags(model),
     ...["--source", sourceURL(model.out)],
     ...(timeout ? ["--timeout", timeout] : []),
     "--out",

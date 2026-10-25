@@ -37,15 +37,15 @@ function exactFields(
   return data;
 }
 
-/** The entrypoint must be one of the certificate's identified definitions. */
+/** The operation names the Lean function the endpoint implements. */
 export function parseAdvertisement(value: unknown): Advertisement {
   const data = exactFields(value, ["certificate", "operation"]);
   if (typeof data.operation !== "string" || !data.operation)
     throw new Error("operation must be a nonempty string");
-  const certificate = parseCertificate(data.certificate);
-  if (!Object.hasOwn(certificate.definitions, data.operation))
-    throw new Error("operation is not a certified definition");
-  return { operation: data.operation, certificate };
+  return {
+    operation: data.operation,
+    certificate: parseCertificate(data.certificate),
+  };
 }
 
 export function encodeDiscovery(contracts: Record<string, Advertisement>) {

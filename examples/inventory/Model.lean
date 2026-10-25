@@ -19,13 +19,6 @@ def UnitInventory.Conserves (stock : UnitInventory.Stock) : UnitInventory.Result
   | .rejected => stock = .empty
   | .accepted remaining => stock = .more remaining
 
-/-- The client's weaker postcondition only rules out accepting empty stock. -/
-def UnitInventory.NonemptyOnSuccess (stock : UnitInventory.Stock) : UnitInventory.Result → Prop
-  | .rejected => True
-  | .accepted _ => match stock with
-    | .empty => False
-    | .more _ => True
-
 /-- Whether a reservation result accepts the request. -/
 def UnitInventory.Succeeds : UnitInventory.Result → Prop
   | .rejected => False

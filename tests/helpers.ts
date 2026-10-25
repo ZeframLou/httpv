@@ -12,9 +12,8 @@ export const id = (label: string) =>
 export const operation = "Inventory.POST_reservations";
 export const axioms = { propext: standardAxioms.propext! };
 
-type Statement = Omit<Certificate, "format" | "proof" | "source">;
-const statement = ({ format, claims, definitions, axioms }: Certificate) =>
-  canonical({ format, claims, definitions, axioms });
+const statement = ({ format, claims, axioms }: Certificate) =>
+  canonical({ format, claims, axioms });
 
 /** Signs statements, so policy tests run without SP1. Production uses
  * ZKLean's pinned Groth16 verifier. */
@@ -31,15 +30,13 @@ export function testAuthority() {
       );
     },
   };
-  const issue = ({
-    claims,
-    definitions = {},
-    axioms = {},
-  }: Partial<Statement> & Pick<Statement, "claims">): Certificate => {
+  const issue = (
+    claims: Record<string, string>,
+    axioms: Record<string, string> = {},
+  ): Certificate => {
     const unsigned = {
       format: "zklean/1" as const,
       claims,
-      definitions,
       axioms,
       source: "https://example.test/inventory.ndjson",
       proof: "",
@@ -54,57 +51,30 @@ export function testAuthority() {
   return { backend, issue };
 }
 
-export function requirements(
-  claims: Record<string, string>,
-  definitions: Record<string, string>,
-): Requirements {
-  return { format: "zklean/requirements/1", claims, definitions };
+export function requirements(claims: Record<string, string>): Requirements {
+  return { format: "zklean/requirements/1", claims };
 }
 
-/** The inventory story as identities. V3 redefines the operation to accept
- * backorders; the weakened version keeps the operation but promises less. */
+/** The inventory story as claim identities. Each identity covers the claim's
+ * statement and the operation it is about, so V3, which redefines the
+ * operation to accept backorders, certifies a different identity. */
 export function inventory(authority = testAuthority()) {
-  const op = { [operation]: id("POST_reservations v1") };
-  const safe = { "Inventory.reservation_safe": id("reservation_safe") };
-  const conserved = { "Client.stock_conserved": id("stock_conserved") };
+  const safe = { "Inventory.reservation_safe": id("reservation_safe v1") };
   return {
     authority,
-    v1: authority.issue({ claims: safe, definitions: op, axioms }),
-    v2: authority.issue({
-      claims: {
+    v1: authority.issue(safe, axioms),
+    v2: authority.issue(
+      {
         ...safe,
         "Inventory.valid_request_succeeds": id("valid_request_succeeds"),
       },
-      definitions: {
-        ...op,
-        "Inventory.restock": id("restock"),
-        "Inventory.audit": id("audit"),
-      },
       axioms,
-    }),
+    ),
     v3: authority.issue({
-      claims: { "Inventory.reservation_safe": id("reservation_safe v3") },
-      definitions: { [operation]: id("POST_reservations backorders") },
+      "Inventory.reservation_safe": id("reservation_safe backorders"),
     }),
-    weakened: authority.issue({
-      claims: { "Inventory.reservation_safe": id("reservation_safe weak") },
-      definitions: op,
-      axioms,
-    }),
-    renamed: authority.issue({
-      claims: { "Backorders.reservation_safe": id("reservation_safe") },
-      definitions: {
-        "Backorders.POST_reservations": id("POST_reservations v1"),
-      },
-    }),
-    /** Proves the client's requirement from the remote safety claim. */
-    bridge: authority.issue({ claims: conserved, axioms: safe }),
-    /** Proves it from the operation's definition alone. */
-    independent: authority.issue({ claims: conserved, axioms }),
-    /** What a client requiring exactly V1's guarantee stores. */
-    exact: requirements(safe, op),
-    /** What the checkout client's own proof assumes. */
-    client: requirements(conserved, op),
+    /** What a client requiring V1's guarantee stores. */
+    exact: requirements(safe),
   };
 }
 

@@ -20,7 +20,7 @@ const compare = (
     ...overrides,
   });
 
-test("an upgrade that adds claims and definitions keeps an exact match", async () => {
+test("an upgrade that adds claims keeps an exact match", async () => {
   for (const remote of [fixtures.v1, fixtures.v2])
     expect(await compare(remote)).toMatchObject({
       status: "verified",
@@ -28,80 +28,22 @@ test("an upgrade that adds claims and definitions keeps an exact match", async (
     });
 });
 
-test("a redefined operation is incompatible, and no bridge can fix that", async () => {
+test("a redefined operation changes the claim's identity", async () => {
   expect(await compare(fixtures.v3)).toMatchObject({
     status: "incompatible",
-    reason: "operation-mismatch",
+    reason: "requirements-not-met",
   });
-  expect(
-    await compare(fixtures.v3, {
-      requirements: fixtures.client,
-      bridge: fixtures.independent,
-    }),
-  ).toMatchObject({ status: "incompatible", reason: "operation-mismatch" });
 });
 
-test("the advertised entrypoint must be the expected operation", async () => {
-  expect(await compare(fixtures.v2, { as: "Inventory.restock" })).toMatchObject(
-    {
-      status: "incompatible",
-      reason: "operation-mismatch",
-      advertisedOperation: "Inventory.restock",
-    },
-  );
+test("the advertised operation must be the expected one", async () => {
+  // A certificate shared across endpoints still has to name this endpoint.
   expect(
-    await compare(fixtures.renamed, {
-      as: "Backorders.POST_reservations",
-      requirements: fixtures.client,
-      bridge: fixtures.independent,
-    }),
-  ).toMatchObject({ status: "incompatible", reason: "operation-mismatch" });
-  expect(
-    await compare(fixtures.v1, { operation: "Missing.operation" }),
-  ).toMatchObject({ status: "unknown", reason: "invalid-requirements" });
-});
-
-test("a verified bridge establishes a weaker requirement", async () => {
-  expect(
-    await compare(fixtures.v1, { requirements: fixtures.client }),
-  ).toMatchObject({ status: "incompatible", reason: "requirements-not-met" });
-  for (const [remote, bridge] of [
-    [fixtures.v1, fixtures.bridge],
-    [fixtures.v2, fixtures.bridge],
-    [fixtures.v1, fixtures.independent],
-  ])
-    expect(
-      await compare(remote!, {
-        requirements: fixtures.client,
-        bridge: bridge!,
-      }),
-    ).toMatchObject({ status: "verified", reason: "bridge" });
-});
-
-test("a bridge fails if it proves something else or assumes more than it may", async () => {
-  const invalid = { status: "unknown", reason: "invalid-bridge" };
-  // Proves the wrong claims.
-  expect(
-    await compare(fixtures.v1, {
-      requirements: fixtures.client,
-      bridge: fixtures.v1,
-    }),
-  ).toMatchObject(invalid);
-  // Assumes a remote claim that the remote weakened under the same name.
-  expect(
-    await compare(fixtures.weakened, {
-      requirements: fixtures.client,
-      bridge: fixtures.bridge,
-    }),
-  ).toMatchObject(invalid);
-  // A client axiom and a remote claim with one name but different meanings.
-  expect(
-    await compare(fixtures.v1, {
-      requirements: fixtures.client,
-      bridge: fixtures.bridge,
-      axioms: { ...axioms, "Inventory.reservation_safe": id("other") },
-    }),
-  ).toMatchObject({ ...invalid, detail: expect.stringContaining("share") });
+    await compare(fixtures.v2, { as: "Inventory.DELETE_reservations" }),
+  ).toMatchObject({
+    status: "incompatible",
+    reason: "operation-mismatch",
+    advertisedOperation: "Inventory.DELETE_reservations",
+  });
 });
 
 test("certificate failures are unknown", async () => {

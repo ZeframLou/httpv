@@ -24,7 +24,7 @@ no Rust, SP1, or Lean toolchain is needed to run the tests or the example.
 | `src/`                  | The library: protocol, server, client, compatibility rules.  |
 | `examples/upgrades.ts`  | The runnable example.                                        |
 | `examples/inventory/`   | Its Lean project, requirements and real Groth16 certificates. |
-| `scripts/models.ts`     | Each module's claims, definitions, axioms and output path.   |
+| `scripts/models.ts`     | Each module's claims and output path.                        |
 
 Most tests build certificates from made-up identities and sign them with a
 test-only Ed25519 backend, so they run in milliseconds. `tests/groth16.test.ts`
@@ -42,25 +42,19 @@ bun run check:certificates  # every artifact matches its re-checked source
 The repository is private, so the check verifies each committed export instead
 of downloading the certificate's source URL.
 
-`bun run prove` regenerates the requirements, the bridge's axiom policy, and
-each certificate with the Lean export it was proved from, which the
-certificate names as its source. Review the diff before committing. Prove with
-ZKLean's released guest so the certificates verify under the SDK's pinned key:
-set `ZKLEAN_GUEST_ELF` to the guest program and `ZKLEAN_PROFILE` to its verifier
-profile, and the prover refuses to run if they disagree. The native prover
-needs Go 1.23 or newer.
+`bun run prove` regenerates the requirements and each certificate with the Lean
+export it was proved from, which the certificate names as its source. Review
+the diff before committing. Prove with ZKLean's released guest so the
+certificates verify under the SDK's pinned key: set `ZKLEAN_GUEST_ELF` to the
+guest program and `ZKLEAN_PROFILE` to its verifier profile, and the prover
+refuses to run if they disagree. The native prover needs Go 1.23 or newer.
 
-Each proof takes about two hours and peaks near 13 GiB of memory on a four-CPU
-machine. To bound it:
+Each proof takes minutes and several GiB of memory. To bound it:
 
 ```sh
 RAYON_NUM_THREADS=4 GOMAXPROCS=2 GOMEMLIMIT=6GiB GOGC=20 \
 ZKLEAN_PROVE_TIMEOUT=86400000 bun run prove
 ```
-
-`examples/inventory/axioms.json` pins the bridge's assumption to the identity
-of V1's claim, as computed from source. Never take it from a certificate's
-producer.
 
 ## Continuous integration
 

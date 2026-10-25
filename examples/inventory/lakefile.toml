@@ -1,4 +1,4 @@
 name = "UnitInventory"
 [[lean_lib]]
 name = "UnitInventory"
-roots = ["Model", "Operation", "V1", "V2", "V3", "Bridge", "Requirements"]
+roots = ["Model", "Operation", "V1", "V2", "V3", "Requirements"]

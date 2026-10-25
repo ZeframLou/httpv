@@ -10,7 +10,6 @@ export type Status = "verified" | "incompatible" | "unknown";
 export type Reason =
   // verified
   | "exact-match"
-  | "bridge"
   // incompatible
   | "operation-mismatch"
   | "requirements-not-met"
@@ -20,7 +19,6 @@ export type Reason =
   | "missing-certificate"
   | "invalid-advertisement"
   | "invalid-requirements"
-  | "invalid-bridge"
   | "timeout"
   | "expired"
   | "stopped";
@@ -29,7 +27,6 @@ export interface Result {
   status: Status;
   reason: Reason;
   detail?: string;
-  certificateId?: string;
   statementId?: string;
   /** Entrypoint the server advertised for this endpoint. */
   advertisedOperation?: string;
@@ -44,14 +41,13 @@ export interface Advertisement {
 
 /** What a client's correctness proof assumes about one remote operation. */
 export interface Requirement {
-  /** Expected entrypoint; it must be one of the required definitions. */
+  /** The Lean function the endpoint must implement, which the required claims
+   * are about. Their identities fix its body; this name fixes the endpoint. */
   operation: string;
   /** A requirements snapshot or the path of its JSON file. */
   requirements: Requirements | string;
   /** Axioms you accept, by name and identity; see zklean's `standardAxioms`. */
   axioms: Readonly<Record<string, string>>;
-  /** Certificate proving the requirements from the remote claims. */
-  bridge?: Certificate;
 }
 
 export interface QueryOptions {

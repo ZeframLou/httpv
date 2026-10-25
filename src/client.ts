@@ -1,6 +1,5 @@
 import { createVerifier, loadRequirements } from "zklean";
 import type { Requirements } from "zklean";
-import { bridgePolicy, definitionsMatch, includes } from "./compatibility.ts";
 import {
   DiscoveryError,
   MEDIA_TYPE,
@@ -130,10 +129,6 @@ export function createHTTPV(options: ClientOptions = {}) {
     let requirements: Requirements;
     try {
       requirements = await loadRequirements(requirement.requirements);
-      if (!Object.hasOwn(requirements.definitions, requirement.operation))
-        throw new Error(
-          `${requirement.operation} is not one of the required definitions`,
-        );
     } catch (error) {
       return {
         ...base,
@@ -142,40 +137,15 @@ export function createHTTPV(options: ClientOptions = {}) {
         detail: String(error),
       };
     }
-    if (
-      !definitionsMatch(
-        certificate,
-        advertised,
-        requirements,
-        requirement.operation,
-      )
-    )
+    if (advertised !== requirement.operation)
       return { ...base, status: "incompatible", reason: "operation-mismatch" };
-    if (includes(certificate.claims, requirements.claims))
-      return { ...base, status: "verified", reason: "exact-match" };
-    const { bridge } = requirement;
-    if (!bridge)
-      return {
-        ...base,
-        status: "incompatible",
-        reason: "requirements-not-met",
-      };
-
-    const invalid = (detail: string): Result => ({
-      ...base,
-      status: "unknown",
-      reason: "invalid-bridge",
-      detail,
-    });
-    const policy = bridgePolicy(requirement.axioms, certificate);
-    if (!policy)
-      return invalid("a client axiom and a remote claim share a name");
-    const bridged = await verify(bridge, { axioms: policy });
-    if (bridged.status !== "verified")
-      return invalid(bridged.detail ?? bridged.reason);
-    if (!includes(bridge.claims, requirements.claims))
-      return invalid("bridge does not prove the required claims");
-    return { ...base, status: "verified", reason: "bridge" };
+    // Same name and identity: the same statement about the same definitions.
+    const met = Object.entries(requirements.claims).every(
+      ([name, id]) => certificate.claims[name] === id,
+    );
+    return met
+      ? { ...base, status: "verified", reason: "exact-match" }
+      : { ...base, status: "incompatible", reason: "requirements-not-met" };
   }
 
   /** Query and compare. Never throws; failures are `unknown` results. */
@@ -232,17 +202,10 @@ export function createHTTPV(options: ClientOptions = {}) {
     };
 
     const notify = (result: Result): void => {
-      const {
-        status,
-        reason,
-        certificateId,
-        statementId,
-        advertisedOperation,
-      } = result;
+      const { status, reason, statementId, advertisedOperation } = result;
       const key = JSON.stringify([
         status,
         reason,
-        certificateId,
         statementId,
         advertisedOperation,
       ]);
