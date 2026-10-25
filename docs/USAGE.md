@@ -12,25 +12,26 @@ npm install httpv
 You can also use `bun add httpv`. HTTPV runs on [Bun](https://bun.sh/) 1.4.4 or
 newer. For TypeScript checking, add `@types/bun` as a development dependency.
 
-To see the whole workflow before integrating, run the example from a source
-checkout. It serves three versions of a real certificate and blocks requests
-once the third breaks the client's requirement:
-
-```sh
-bun run example
-```
+From a source checkout, `bun run example` serves three versions of a real
+certificate and blocks requests once the third breaks the client's
+requirement. Its certificates are being regenerated for the current format, so
+it fails until they are.
 
 ## Serve a certificate
 
-Generate the API's certificate with [ZKLean](https://github.com/ZeframLou/zklean-dist)
-before deployment. A certificate is a few hundred bytes: the names of the
-proved claims and the axioms they use, each with an **identity** (a hash of the
-declaration and everything it refers to, such as the operation a claim is
-about), plus a 260-byte proof. It also records its **source**: the URL of the Lean
-export it was proved from, which `zklean prove` writes beside the certificate.
-Publish that file so clients can review what the identities mean. To keep
-proofs private, prove from a module that states the claims as axioms; the
-identities are the same.
+Generate each endpoint's certificate with
+[ZKLean](https://github.com/ZeframLou/zklean-dist) before deployment. A
+certificate is a few hundred bytes:
+
+- **claims:** the proved theorems, each with an **identity**, a hash of the
+  theorem's statement and of everything it refers to, including the endpoint's
+  Lean function;
+- **axioms:** the unproved assumptions the proofs use, with their identities;
+- **proof:** 260 bytes that prove the claims under those axioms;
+- **source:** the URL of the Lean export the certificate was proved from, which
+  `zklean prove` writes beside the certificate. Publish that file so clients
+  can review what the identities mean. To keep proofs private, prove from a
+  module that states the claims as axioms; the identities are the same.
 
 Wrap your existing Fetch handler:
 
@@ -38,37 +39,36 @@ Wrap your existing Fetch handler:
 import { serve } from "httpv";
 import { fetch as application } from "./app.ts";
 
-const certificate = await Bun.file("./certs/reservations.json").json();
-
 Bun.serve({
   port: 3000,
   ...serve({
     routes: {
-      "POST /reservations": certificate,
+      "POST /reservations": await Bun.file("./certs/reservations.json").json(),
     },
     fetch: application,
   }),
 });
 ```
 
-HTTPV answers `OPTIONS` requests that accept `application/httpv+json`; every
-other request goes to your handler. Serving needs no verifier.
+HTTPV answers `OPTIONS` requests that accept `application/httpv+json`. Every
+other request goes to your handler, including CORS preflight requests, so your
+CORS policy applies as usual. Serving needs no verifier. Paths match exactly.
 
 Give each endpoint its own certificate, with claims about that endpoint's
-behavior, so changing one endpoint never disturbs clients of another. Paths
-match exactly.
+behavior, so changing one endpoint never disturbs clients of another.
 
-To change the certificate without restarting, pass a function instead. It runs
-on every discovery request:
+To change a certificate without restarting, pass a function instead. It runs on
+every discovery request:
 
 ```ts
-"POST /reservations": async () =>
-  Bun.file("./certs/reservations.json").json(),
+"POST /reservations": () => Bun.file("./certs/reservations.json").json(),
 ```
 
-Deploy each certificate with the behavior it describes, and serve it over HTTPS.
+Serve over HTTPS, and deploy each certificate with the behavior it describes.
 
 ## Create a client
+
+Save this as `httpv.ts`:
 
 ```ts
 import { createHTTPV } from "httpv";
@@ -77,7 +77,7 @@ export const httpv = createHTTPV();
 ```
 
 The client verifies certificates with ZKLean's embedded WebAssembly verifier and
-the checker key pinned in the SDK, never a key from the API being checked. It
+the verifying key pinned in the SDK, never a key from the API being checked. It
 needs no native executable, prover, or Lean process.
 
 To use another verifier, pass `createHTTPV({ backend })`. A backend has an
@@ -85,10 +85,9 @@ To use another verifier, pass `createHTTPV({ backend })`. A backend has an
 `verify(certificate)` returning a boolean. It is trusted to authenticate the
 entire certificate.
 
-## Choose your requirements
+## Write your requirements
 
-Your **requirements** are the claims your client's proof assumes about the
-API's endpoint, by name and identity:
+Your **requirements** are the claims your code relies on, by name and identity:
 
 ```json
 {
@@ -97,34 +96,37 @@ API's endpoint, by name and identity:
 }
 ```
 
-Generate them from Lean code you have reviewed. To get the API's code, fetch
-its certificate's source; ZKLean checks the export and fails unless every
+Write them from Lean code you have reviewed. To get the API's code, fetch the
+source its certificate names. ZKLean checks the export and fails unless every
 identity matches the certificate, so a wrong pointer cannot mislead you, and it
 never runs what it downloads:
 
 ```sh
-zklean fetch --certificate approved.json --out vendor/inventory.ndjson
+zklean fetch --certificate reservations.json --out vendor/inventory.ndjson
 ```
 
-Then write requirements from that code, or from your own statements of what
-you need, and commit the file:
+State the claims you rely on in a Lean module, then generate the requirements
+from it and commit the result:
 
 ```sh
-zklean requirements --claims Inventory.reservation_safe \
-  --out specs/requirements.json
+zklean requirements --project specs --module Requirements \
+  --claims Inventory.reservation_safe --out specs/requirements.json
 ```
 
-Statements can be `axiom`s: an identity covers what a declaration states, not
-how it is proved, so an axiom matches a theorem with the same statement. Make
-sure the claims are about the function the endpoint implements; their
-identities then fix its definition. If your proof needs a weaker property than the API
-certifies, prove it from the API's claims in your own Lean code and require
-those claims. Keep requirements under your control; copying whatever the server
-advertises would defeat the check.
+The module can state claims as `axiom`s: an identity covers what a declaration
+states, not how it is proved, so an axiom matches a theorem with the same
+statement.
 
-## Check an API before using it
+- Make sure the claims are about the function the endpoint implements. Their
+  identities then fix that function's definition.
+- If your code needs a weaker property than the API certifies, prove it from
+  the API's claims in your own Lean code and require the API's claims.
+- Keep requirements under your control. Copying whatever the server advertises
+  would defeat the check.
 
-Describe the dependency once, then check it:
+## Check an endpoint
+
+Describe the endpoint once, then check it:
 
 ```ts
 import { standardAxioms } from "zklean";
@@ -145,16 +147,21 @@ if (result.status !== "verified")
 `check` fetches the endpoint's certificate, verifies it, and compares its claim
 identities with your requirements. It never throws.
 
-| Status         | Meaning                                                          | Reasons                                       |
-| -------------- | ---------------------------------------------------------------- | --------------------------------------------- |
-| `verified`     | The certificate is valid and establishes your requirements.      | `exact-match`                                 |
-| `incompatible` | The certificate is valid but does not establish your requirements. | `requirements-not-met`                        |
-| `unknown`      | Nothing could be established.                                    | Discovery, certificate or configuration failures |
+| Status         | Meaning                                                              | Reason                 |
+| -------------- | -------------------------------------------------------------------- | ---------------------- |
+| `verified`     | The certificate is valid and proves every required claim.            | `exact-match`          |
+| `incompatible` | The certificate is valid, but a required claim is missing or changed. | `requirements-not-met` |
+| `unknown`      | Nothing could be established.                                        | See below              |
 
-Every required claim must be certified with the same identity; otherwise the
-result is `incompatible / requirements-not-met`. The server may certify extra
-claims. Because identities hash names and content, a matching theorem name with
-a changed statement, or a redefined operation, never matches.
+`unknown` reasons are `unavailable`, `missing-certificate` and
+`invalid-advertisement` for discovery; `invalid-certificate`,
+`forbidden-axiom`, `axiom-mismatch` and `verifier-unavailable` for the
+certificate; `invalid-requirements` for your requirements file; and `timeout`,
+`expired` and `stopped` from a monitor.
+
+The server may certify extra claims. Because identities hash names and content,
+a theorem with the same name but a changed statement, or about a redefined
+function, never matches.
 
 `axioms` lists the unproved assumptions you accept, by name and identity.
 `standardAxioms` from ZKLean holds Lean's `propext`, `Quot.sound`, and
@@ -162,15 +169,15 @@ a changed statement, or a redefined operation, never matches.
 using an axiom you did not list is `unknown / forbidden-axiom`, and one whose
 axiom has a different identity is `unknown / axiom-mismatch`.
 
-For lower-level control, `httpv.query(url, { method })` returns the
+For lower-level control, `httpv.query(url, { method })` returns the endpoint's
 certificate, throwing a `DiscoveryError` if discovery fails, and
-`httpv.compare(certificate, requirement)` runs the rest of the check.
-Discovery gives up after `timeout` milliseconds, 10 s by default, even if you
-also pass a `signal`.
+`httpv.compare(certificate, requirement)` runs the rest of the check. Discovery
+gives up after `timeout` milliseconds, 10 s by default, even if you also pass a
+`signal`.
 
 ## Monitor updates
 
-APIs change without telling their clients. `watch` rechecks a dependency on an
+APIs change without telling their clients. `watch` rechecks an endpoint on an
 interval:
 
 ```ts
@@ -190,24 +197,25 @@ async function reserve(quantity: number) {
 process.on("SIGTERM", () => monitor.stop());
 ```
 
-Call `requireVerified()` wherever a request depends on the contract. It throws
-unless the latest result is `verified` and younger than `maxAge`. `onChange` is
-for notifications: it runs on the first result, when a verified result
-expires, and whenever the status, reason, or certified statement changes. Monitoring continues if it
-throws, but the error is reported as uncaught, which ends a Bun process unless
-you handle `uncaughtException`.
+Call `requireVerified()` wherever a request depends on the endpoint. It throws
+unless the latest result is `verified` and younger than `maxAge`.
 
-| Setting    | Default              | Meaning                                         |
-| ---------- | -------------------- | ----------------------------------------------- |
-| `interval` | required             | Delay between checks, in milliseconds.          |
-| `timeout`  | `10_000`             | Limit on one check, including verification.     |
-| `maxAge`   | `interval + timeout` | Age at which a verified result stops counting.  |
-| `signal`   | none                 | Stops the monitor when aborted.                 |
+`onChange` is for notifications. It runs on the first result, when a verified
+result expires, and whenever the status, reason, or certified statement
+changes. If it throws, monitoring continues, but the error is reported as
+uncaught, which ends a Bun process unless you handle `uncaughtException`.
+
+| Setting    | Default              | Meaning                                        |
+| ---------- | -------------------- | ---------------------------------------------- |
+| `interval` | required             | Delay between checks, in milliseconds.         |
+| `timeout`  | `10_000`             | Limit on one check, including verification.    |
+| `maxAge`   | `interval + timeout` | Age at which a verified result stops counting. |
+| `signal`   | none                 | Stops the monitor when aborted.                |
 
 `monitor.refresh()` runs a check now; simultaneous calls share one.
 `monitor.current` returns the latest result, and `stop()` ends polling and
-invalidates the result.
-Polling cannot tell you what the server does between checks.
+invalidates the result. Polling cannot tell you what the server does between
+checks.
 
 ## Local development
 

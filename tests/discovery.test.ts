@@ -122,8 +122,18 @@ test("discovery refuses redirects, wrong media types, failures and oversized bod
   ).rejects.toMatchObject({ reason: "unavailable" });
 });
 
-test("q=0 declines discovery, and a __proto__ method is still advertised", async () => {
+test("q=0 and CORS preflights reach the application; a __proto__ method is still advertised", async () => {
   using app = listen(v1);
+  expect(
+    await fetch(app.url, {
+      method: "OPTIONS",
+      headers: {
+        Accept: MEDIA_TYPE,
+        Origin: "https://client.example",
+        "Access-Control-Request-Method": "POST",
+      },
+    }).then((r) => r.json()),
+  ).toEqual({ method: "OPTIONS" });
   for (const accept of [`${MEDIA_TYPE};q=0, */*`, `${MEDIA_TYPE}; q = 0.000`])
     expect(
       await fetch(app.url, {

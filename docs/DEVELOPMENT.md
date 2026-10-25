@@ -21,7 +21,7 @@ no Rust, SP1, or Lean toolchain is needed to run the tests or the example.
 
 | Path                    | Contents                                                     |
 | ----------------------- | ------------------------------------------------------------ |
-| `src/`                  | The library: protocol, server, client, compatibility rules.  |
+| `src/`                  | The library: protocol, server, and client with its check.    |
 | `examples/upgrades.ts`  | The runnable example.                                        |
 | `examples/inventory/`   | Its Lean project, requirements and real Groth16 certificates. |
 | `scripts/models.ts`     | Each module's claims and output path.                        |

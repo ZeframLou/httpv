@@ -46,8 +46,11 @@ export function serve({ routes, fetch }: ServeOptions): { fetch: Handler } {
   };
   return {
     async fetch(request) {
+      // A CORS preflight is the browser asking about a later request, never
+      // discovery, so the application answers it.
       if (
         request.method !== "OPTIONS" ||
+        request.headers.has("access-control-request-method") ||
         !acceptsDiscovery(request.headers.get("accept"))
       )
         return fetch(request);
