@@ -171,6 +171,18 @@ test("responses are classified as SPEC 3.3 says", async () => {
   expect(
     await shouted.query("https://example.test/r", { method: "POST" }),
   ).toEqual(v1);
+  // A transport that follows a redirect anyway.
+  const redirected = createHTTPV({
+    fetch: async () =>
+      Object.defineProperty(
+        Response.json(envelope, { headers: { "content-type": MEDIA_TYPE } }),
+        "redirected",
+        { value: true },
+      ),
+  });
+  await expect(
+    redirected.query("https://example.test/r", { method: "POST" }),
+  ).rejects.toMatchObject({ reason: "unavailable" });
   const plainJson = createHTTPV({ fetch: async () => Response.json(envelope) });
   await expect(
     plainJson.query("https://example.test/r", { method: "POST" }),

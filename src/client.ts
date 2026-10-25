@@ -1,5 +1,6 @@
 import { createVerifier, loadRequirements, satisfies } from "zklean";
 import type { Requirements } from "zklean";
+import { identified } from "zklean/encoding";
 import {
   DiscoveryError,
   MEDIA_TYPE,
@@ -101,6 +102,11 @@ export function createHTTPV(options: ClientOptions = {}) {
     } catch (error) {
       throw new DiscoveryError("unavailable", String(error));
     }
+    // A custom transport may ignore `redirect: "error"`.
+    if (response.redirected) {
+      await response.body?.cancel().catch(() => {});
+      throw new DiscoveryError("unavailable", "discovery was redirected");
+    }
     const type = response.headers
       .get("content-type")
       ?.split(";")[0]!
@@ -130,25 +136,24 @@ export function createHTTPV(options: ClientOptions = {}) {
   ): Promise<Result> {
     // Own the inputs: the caller's objects may change while verification awaits.
     [certificate, requirement] = structuredClone([certificate, requirement]);
-    const { status, reason, ...identity } = await verify(certificate, {
-      axioms: requirement.axioms,
-    });
-    if (status !== "verified")
-      return { ...identity, status, reason: reason as Reason };
-
     let requirements: Requirements;
     try {
       // ZKLean rejects requirements with no claims, which would accept any
       // valid certificate.
       requirements = await loadRequirements(requirement.requirements);
+      identified(requirement.axioms);
     } catch (error) {
       return {
-        ...identity,
         status: "unknown",
         reason: "invalid-requirements",
         detail: String(error),
       };
     }
+    const { status, reason, ...identity } = await verify(certificate, {
+      axioms: requirement.axioms,
+    });
+    if (status !== "verified")
+      return { ...identity, status, reason: reason as Reason };
     // Same name and identity: the same statement about the same definitions.
     return satisfies(certificate, requirements)
       ? { ...identity, status: "verified", reason: "exact-match" }

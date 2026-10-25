@@ -1,4 +1,4 @@
-import { parseCertificate } from "zklean";
+import { parseCertificate } from "zklean/encoding";
 import { FORMAT, MEDIA_TYPE, methodName } from "./protocol.ts";
 import type { Certificate, Handler, ServeOptions, Source } from "./types.ts";
 
@@ -19,8 +19,9 @@ function acceptsDiscovery(accept: string | null): boolean {
 
 /** Answer HTTPV discovery and pass every other request to `fetch`, including
  * OPTIONS for a path without certificates. Each method maps to its own
- * certificate, so a change to one endpoint leaves its siblings' clients
- * undisturbed. Paths are compared as the URL parser normalizes them, without
+ * certificate, so changing one endpoint's claims leaves its siblings' clients
+ * undisturbed; a failing provider makes discovery fail for the whole path.
+ * Paths are compared as the URL parser normalizes them, without
  * the query. Static certificates are checked at startup, providers on every
  * discovery request; ZKLean rejects a source that is not https. */
 export function serve({ routes, fetch }: ServeOptions): { fetch: Handler } {

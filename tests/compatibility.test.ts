@@ -63,6 +63,10 @@ test("unusable requirements fail closed", async () => {
       status: "unknown",
       reason: "invalid-requirements",
     });
+  // A caller's malformed axiom policy is its own error, not the certificate's.
+  expect(
+    await compare(fixtures.v1, { axioms: "propext" as never }),
+  ).toMatchObject({ status: "unknown", reason: "invalid-requirements" });
 });
 
 test("mutating the inputs during verification cannot change what is compared", async () => {

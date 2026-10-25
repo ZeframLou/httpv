@@ -1,5 +1,5 @@
 /** Run the example against npm-installed HTTPV and ZKLean tarballs, with no
- * Git dependency, native verifier, or Lean toolchain available. */
+ * Git dependency, native checker, or Lean toolchain available. */
 import { cp, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -45,7 +45,7 @@ try {
   });
   const output = await run([process.execPath, "examples/upgrades.ts"], {
     PATH: "/no-native-tools",
-    ZKLEAN_NATIVE: "/no-native-verifier",
+    ZKLEAN_NATIVE: "/no-native-checker",
     ELAN_HOME: "/no-lean",
   });
   const expected = [

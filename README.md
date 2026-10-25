@@ -63,7 +63,7 @@ Ordinary requests and responses are unchanged.
 
 Proving happens once per release, offline, and takes tens of minutes to hours.
 Checking is cheap: ZKLean's inventory example compiles to a 381 KB export of
-Lean declarations but a certificate of about 650 bytes, and the client verifies it with
+Lean declarations but a certificate under 1 KB, and the client verifies it with
 no Lean installation.
 
 ## Trust model

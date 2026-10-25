@@ -78,7 +78,8 @@ every discovery request:
 ```
 
 If the function throws or returns an invalid certificate, the server answers
-`503`, and clients report `unknown / unavailable`.
+`503` for that path, so clients of every method on it report
+`unknown / unavailable`.
 
 ## Create a client
 
@@ -98,8 +99,9 @@ client needs no native executable, prover, or Lean process.
 To use another transport, pass `createHTTPV({ fetch })`; it must not follow
 redirects or relax TLS. To use another verifier, pass
 `createHTTPV({ backend })`. A backend has an `identity` string describing its
-trusted configuration and an async `verify(certificate)` returning a boolean. It is trusted to decide whether the
-proof establishes the certificate's claims and axioms.
+trusted configuration and an async `verify(certificate)` returning a boolean.
+It is trusted to decide whether the proof establishes the certificate's claims
+and axioms.
 
 ## Write your requirements
 
@@ -175,7 +177,7 @@ axioms do.
 - the certificate: `invalid-certificate`, `forbidden-axiom`, `axiom-mismatch`,
   and `verifier-unavailable`;
 - your configuration: `invalid-requirements`, including requirements with no
-  claims.
+  claims and a malformed `axioms`.
 
 `axioms` lists the axioms you accept, by name and identity. `{}` accepts only
 certificates that use none. A certificate using an axiom you did not list is
