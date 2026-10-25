@@ -72,20 +72,19 @@ jobs:
           curl -fsSL https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh -o /tmp/elan-init.sh
           sh /tmp/elan-init.sh -y --default-toolchain leanprover/lean4:v4.36.0-rc1
           echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
-      - name: Build the independent checker CLI
+      - name: Build ZKLean's native checker and exporter
         working-directory: .tooling/zklean
         run: |
           bun install --frozen-lockfile
           cargo build --release --locked -p zklean-native
           bash scripts/setup-exporter.sh
-          bun run compile
       - name: Check the example certificates against their Lean sources
         env:
           ZKLEAN_READ_TOKEN: ${{ secrets.ZKLEAN_READ_TOKEN }}
         run: |
           git config --global url."https://x-access-token:$ZKLEAN_READ_TOKEN@github.com/".insteadOf https://git@github.com/
           bun install --frozen-lockfile
-          export ZKLEAN_CLI="$PWD/.tooling/zklean/dist/zklean"
+          export ZKLEAN_CLI="$PWD/.tooling/zklean/src/cli.ts"
           export ZKLEAN_NATIVE="$PWD/.tooling/zklean/target/release/zklean-native"
           export ZKLEAN_EXPORTER="$PWD/.tooling/zklean/.tooling/lean4export/.lake/build/bin/lean4export"
           export ZKLEAN_LAKE="$(command -v lake)"

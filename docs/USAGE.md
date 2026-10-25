@@ -16,9 +16,9 @@ HTTPV runs on [Bun](https://bun.sh/) 1.4.4 or newer. For TypeScript checking,
 add `@types/bun` as a development dependency.
 
 Generating certificates and requirements needs the
-[ZKLean CLI](https://github.com/ZeframLou/zklean-dist), which is not yet
-published. It runs on Linux x86-64 and downloads about 2.9 GB of proving data.
-Checking certificates needs only the npm packages.
+[ZKLean CLI](https://github.com/ZeframLou/zklean), run from a ZKLean checkout
+as `bun src/cli.ts`; this guide writes it as `zklean`. Checking certificates
+needs only the npm packages.
 
 ## Serve a certificate
 
@@ -32,9 +32,9 @@ zklean prove --project . --module Inventory \
 ```
 
 `--axioms` must list every axiom the proofs use, or `prove` refuses.
-`--timeout` is in milliseconds; the default is one hour. Proving runs offline
-and can take hours; in ZKLean's benchmarks it peaked at about 12.5 GiB of
-memory, so plan for at least 16 GiB.
+`--timeout` is in milliseconds; the default is one hour. Proving runs offline,
+takes tens of minutes to hours and several GB of memory, and needs ZKLean's
+proving setup (its `CONTRIBUTING.md`).
 
 A certificate is typically under 1 KB; its size grows with the number of claims
 and axioms, not with the size of the proofs. It holds:
@@ -147,14 +147,15 @@ await Bun.write("reservations.json", JSON.stringify(certificate));
 ```
 
 ```sh
-zklean fetch --certificate reservations.json --out vendor/inventory.ndjson
+zklean fetch --certificate reservations.json --axioms propext \
+  --out vendor/inventory.ndjson
 zklean requirements --export vendor/inventory.ndjson \
   --claims Inventory.reservation_safe --out requirements.json
 ```
 
-Check first that the certificate's `source` is an `https` URL you expect to
-download. The export holds compiled declarations, not readable Lean, so review
-the statements in the API's Lean source before requiring them.
+`fetch` verifies the certificate under the axioms you list, then downloads its
+`https` source. The export holds compiled declarations, not readable Lean, so
+review the statements in the API's Lean source before requiring them.
 
 ## Check an endpoint
 

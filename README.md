@@ -35,7 +35,7 @@ Ordinary requests and responses are unchanged.
   assistant. The API author writes the endpoint's behavior as a Lean function
   and proves **theorems** about it, such as "a reservation never exceeds
   available stock". Proofs are checked mechanically.
-- **[ZKLean](https://github.com/ZeframLou/zklean-dist)** checks those proofs
+- **[ZKLean](https://github.com/ZeframLou/zklean)** checks those proofs
   with an independent Lean proof checker inside a cryptographic proving system.
   The result is a **certificate** that anyone can check quickly without seeing
   or re-running the Lean proofs. It lists the proved theorems, called
@@ -61,11 +61,10 @@ Ordinary requests and responses are unchanged.
     certificate          ──▶                                     3. call, or block
 ```
 
-Proving happens once per release, offline, and can take hours.
-Checking is cheap: in ZKLean's
-[benchmarks](https://github.com/ZeframLou/zklean-dist/blob/main/docs/BENCHMARKS.md),
-a one-claim certificate is about 600 bytes and verifies in about a third of a
-second, with no Lean installation on the client.
+Proving happens once per release, offline, and takes tens of minutes to hours.
+Checking is cheap: ZKLean's inventory example compiles to a 381 KB Lean export
+but a 624-byte certificate, and the client verifies it with no Lean
+installation.
 
 ## Trust model
 

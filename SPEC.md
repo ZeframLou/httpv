@@ -149,7 +149,7 @@ Requirements are a ZKLean requirements object [ZKLEAN]:
 ```json
 {
   "format": "zklean/requirements/1",
-  "claims": { "UnitInventory.conserves": "741f…" }
+  "claims": { "UnitInventory.conserves": "ad56…" }
 }
 ```
 
@@ -500,8 +500,9 @@ future registration is:
 - **[RFC9111]** Fielding, R., Ed., Nottingham, M., Ed., and J. Reschke, Ed.,
   "HTTP Caching", STD 98, RFC 9111, June 2022.
 - **[URL]** WHATWG, "URL Standard", <https://url.spec.whatwg.org/>.
-- **[ZKLEAN]** "ZKLean certificate format", version `zklean/1`,
-  <https://github.com/ZeframLou/zklean-dist/blob/main/SPEC.md>.
+- **[ZKLEAN]** "ZKLean certificate format", version `zklean/1`, commit
+  `da87c31e6ee5985c0d83f1a92f89fff23cb3fe04`,
+  <https://github.com/ZeframLou/zklean/blob/da87c31e6ee5985c0d83f1a92f89fff23cb3fe04/SPEC.md>.
 
 ### 10.2. Informative references
 

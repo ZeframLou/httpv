@@ -49,10 +49,10 @@ verifier.
 
 ## Regenerate artifacts
 
-These steps need the ZKLean CLI. An installed CLI includes everything it needs.
-A CLI built from the `ZeframLou/zklean` source also needs the environment
-variables that CI sets in `.github/workflows/check.yml` (`ZKLEAN_CLI`,
-`ZKLEAN_NATIVE`, `ZKLEAN_EXPORTER`, `ZKLEAN_LAKE`).
+These steps need a `ZeframLou/zklean` checkout at the pinned commit, built as
+CI builds it in `.github/workflows/check.yml`, with the environment variables
+CI sets: `ZKLEAN_CLI` (its `src/cli.ts`), `ZKLEAN_NATIVE`, `ZKLEAN_EXPORTER`,
+and `ZKLEAN_LAKE`.
 
 ```sh
 bun run check:certificates  # every artifact matches its re-checked source
@@ -65,18 +65,12 @@ of downloading the certificate's source URL.
 Lean export it was proved from, which the certificate names as its source.
 Review the diff before committing.
 
-To prove with a source-built CLI, build it with proving enabled as ZKLean's
-`docs/DEVELOPMENT.md` describes, including `--features prover,execute` and
-`scripts/setup-circuits.sh`. Then prove with ZKLean's released **guest
-program**, the program that checks Lean proofs inside the SP1 proving system,
-so that the proofs verify under the key pinned in the SDK: set
-`ZKLEAN_GUEST_ELF` to the guest and `ZKLEAN_PROFILE` to its **verifier
-profile**, the JSON naming the guest's SHA-256 and verifying key. The prover
-refuses to run if they disagree.
-
-ZKLean has not measured proving for these modules; its smaller benchmark
-workloads took 25 to 56 minutes and peaked near 12.5 GiB. Run one proof at a
-time, with ZKLean's benchmark settings:
+Proving also needs ZKLean's prover build, the SP1 circuits, and its released
+**guest program**, the program that checks Lean proofs inside SP1, so that the
+proofs verify under the key pinned in the SDK. ZKLean's `CONTRIBUTING.md`
+describes all three; set `ZKLEAN_GUEST_ELF` to the guest. Proving takes tens
+of minutes to hours and several GB of memory. Run one proof at a time and bound
+its resources, for example:
 
 ```sh
 RAYON_NUM_THREADS=2 GOMAXPROCS=2 GOMEMLIMIT=6GiB GOGC=20 \

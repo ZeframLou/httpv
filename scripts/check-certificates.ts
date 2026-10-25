@@ -3,8 +3,7 @@
  * source export. */
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
-import { pathToFileURL } from "node:url";
+import { join } from "node:path";
 import { createVerifier, parseCertificate } from "zklean";
 import { canonical, statement } from "zklean/encoding";
 import {
@@ -52,18 +51,12 @@ try {
       throw new Error(`${model.out}: ${JSON.stringify(result)}`);
     // The repository is private, so check the committed export the source
     // URL names instead of downloading it.
-    const local = join(temporary, `${model.module}.json`);
-    await Bun.write(
-      local,
-      JSON.stringify({
-        ...certificate,
-        source: pathToFileURL(resolve(exportFile(model.out))).href,
-      }),
-    );
     await runZKLean([
       "fetch",
       "--certificate",
-      local,
+      model.out,
+      "--from",
+      exportFile(model.out),
       "--out",
       join(temporary, `${model.module}.ndjson`),
     ]);

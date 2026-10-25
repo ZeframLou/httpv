@@ -16,20 +16,12 @@ function acceptsDiscovery(accept: string | null): boolean {
   });
 }
 
-/** Clients may not dereference a source other than https (SPEC 7.6). */
-function publishable(value: unknown): Certificate {
-  const certificate = parseCertificate(value);
-  if (!certificate.source.startsWith("https://"))
-    throw new Error("a published certificate's source must be https");
-  return certificate;
-}
-
 /** Answer HTTPV discovery and pass every other request to `fetch`, including
  * OPTIONS for a path without certificates. Each method maps to its own
  * certificate, so a change to one endpoint leaves its siblings' clients
  * undisturbed. Paths are compared as the URL parser normalizes them, without
- * the query. Static certificates are checked at startup; providers run on
- * every discovery request. */
+ * the query. Static certificates are checked at startup, providers on every
+ * discovery request; ZKLean rejects a source that is not https. */
 export function serve({ routes, fetch }: ServeOptions): { fetch: Handler } {
   const paths = new Map<string, Map<string, Source>>();
   for (const [route, source] of Object.entries(routes)) {
@@ -47,7 +39,7 @@ export function serve({ routes, fetch }: ServeOptions): { fetch: Handler } {
     if (methods.has(name)) throw new Error(`duplicate route: ${route}`);
     methods.set(
       name,
-      typeof source === "function" ? source : publishable(source),
+      typeof source === "function" ? source : parseCertificate(source),
     );
     paths.set(path, methods);
   }
@@ -70,7 +62,7 @@ export function serve({ routes, fetch }: ServeOptions): { fetch: Handler } {
             [...methods].map(async ([method, source]) => [
               method,
               typeof source === "function"
-                ? publishable(await source())
+                ? parseCertificate(await source())
                 : source,
             ]),
           ),
