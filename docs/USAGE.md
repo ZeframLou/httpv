@@ -40,9 +40,9 @@ and axioms, not with the size of the proofs. It holds:
 - **source:** the URL where you publish the **Lean export**, a file of the
   compiled Lean declarations the identities are computed from. `zklean prove`
   writes it (`certs/reservations.ndjson`) beside the certificate; pass its URL
-  with `--source`. To keep proofs private, publish at that URL an export of a module
-  that states the claims as axioms instead; identities do not cover proofs, so
-  they are the same.
+  with `--source`. To keep proofs private, publish at that URL an export of a
+  module that states the claims as axioms instead; identities do not cover
+  proofs, so they are the same.
 
 Wrap your existing Fetch handler:
 
@@ -121,9 +121,8 @@ Your requirements are a JSON file of claims and identities:
 
    `--project` builds that source with Lake, which runs its build code, so
    review or sandbox third-party source first. You can also state the claims
-   yourself, as `axiom`s in your own module:
-   an identity covers a statement, not its proof, so an axiom matches a theorem
-   with the same statement.
+   yourself, as `axiom`s in your own module: an identity covers a statement,
+   not its proof, so an axiom matches a theorem with the same statement.
 
 3. Commit `requirements.json`.
 
@@ -172,8 +171,7 @@ identities with your requirements. It never throws.
 - the certificate: `invalid-certificate`, `forbidden-axiom`, `axiom-mismatch`,
   and `verifier-unavailable`;
 - your configuration: `invalid-requirements`, including requirements with no
-  claims;
-- a monitor: `timeout`, `expired`, and `stopped`.
+  claims.
 
 `axioms` lists the axioms you accept, by name and identity. `{}` accepts only
 certificates that use none. A certificate using an axiom you did not list is
@@ -186,18 +184,21 @@ certificate, throwing a `DiscoveryError` if discovery fails, and
 gives up after `timeout` milliseconds, 10 s by default, even if you also pass a
 `signal`; pass either in `query`'s options or as `check`'s second argument.
 
-## Monitor updates
+## Recheck on a schedule
 
-`watch` rechecks an endpoint on an interval:
+APIs change without telling their clients, so recheck on an interval and gate
+dependent requests on the latest result. This is application code, not part of
+HTTPV:
 
 ```ts
-const monitor = httpv.watch(inventory, {
-  interval: 60_000,
-  onChange: (result) => console.log(result.status, result.reason),
-});
+let latest = await httpv.check(inventory);
+setInterval(async () => {
+  latest = await httpv.check(inventory);
+}, 60_000);
 
 async function reserve(quantity: number) {
-  monitor.requireVerified();
+  if (latest.status !== "verified")
+    throw new Error(`inventory requirements: ${latest.reason}`);
   return fetch(inventory.url, {
     method: "POST",
     body: JSON.stringify({ quantity }),
@@ -205,32 +206,12 @@ async function reserve(quantity: number) {
 }
 ```
 
-Call `requireVerified()` wherever a request depends on the endpoint. It throws
-unless the latest result is `verified` and younger than `maxAge`, measured from
-when that check started.
-
-`onChange` is for notifications. It runs on the first result, when a verified
-result expires, and whenever the status, reason, or certified claims or axioms
-change. If it throws, monitoring continues, but the error is reported as
-uncaught, which ends a Bun process unless you handle `uncaughtException`.
-
-| Setting    | Default                            | Meaning                                        |
-| ---------- | ---------------------------------- | ---------------------------------------------- |
-| `interval` | required                           | Time between the starts of checks, in ms.      |
-| `timeout`  | `10_000`                           | Limit on one check, including verification.    |
-| `maxAge`   | `max(interval, timeout) + timeout` | Age at which a verified result stops counting. |
-| `signal`   | none                               | Stops the monitor when aborted.                |
-
-A check that overruns `interval` is followed at once. The default `maxAge`
-keeps a verified result current until the next successful check lands.
-
-`monitor.refresh()` starts a check, or returns the one in progress; a monitor
-never runs two checks at once. A monitor's timers keep the process alive, so
-call `monitor.stop()`, or abort the `signal` setting, in your shutdown path. `monitor.current` returns the latest
-result, and `stop()` ends polling and invalidates the result.
+A check returns within `timeout` for discovery, but verification itself is not
+bounded; wrap `check` in your own deadline if you need one. Decide how old a
+result may be before you stop relying on it.
 
 ## Local development
 
 HTTPS is required and redirects are rejected. For a server on this machine
 (`localhost` or a loopback address), add `allowInsecureHttp: true` to the
-endpoint description passed to `check` or `watch`.
+endpoint description passed to `check`.

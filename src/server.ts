@@ -2,21 +2,17 @@ import { parseCertificate } from "zklean";
 import { FORMAT, MEDIA_TYPE, methodName } from "./protocol.ts";
 import type { Certificate, Handler, ServeOptions, Source } from "./types.ts";
 
-/** Whether `Accept` lists the HTTPV media type by name, not by a wildcard,
- * with no parameter but an optional weight above zero (RFC 9110, Section
- * 12.4.2). Quoted strings are blanked first: they only occur in parameters,
- * which disqualify a range anyway, and may contain commas. */
+/** Whether `Accept` lists the HTTPV media type, other than with weight 0. */
 function acceptsDiscovery(accept: string | null): boolean {
-  const unquoted = (accept ?? "").replace(/"(?:\\.|[^"\\])*"/g, '""');
-  return unquoted.split(",").some((range) => {
-    const [type, weight, extra] = range
-      .split(";")
-      .map((part) => part.trim().toLowerCase())
-      .filter((part, index) => index === 0 || part);
-    if (type !== MEDIA_TYPE || extra !== undefined) return false;
-    const q = weight && /^q=(0(\.\d{0,3})?|1(\.0{0,3})?)$/.exec(weight);
-    return weight === undefined || (!!q && Number(q[1]) > 0);
-  });
+  return (accept ?? "")
+    .toLowerCase()
+    .split(",")
+    .some((range) => {
+      const [type, ...parameters] = range.split(";").map((part) => part.trim());
+      return (
+        type === MEDIA_TYPE && !parameters.some((p) => /^q=0(\.0*)?$/.test(p))
+      );
+    });
 }
 
 /** Answer HTTPV discovery and pass every other request to `fetch`, including

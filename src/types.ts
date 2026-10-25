@@ -16,21 +16,16 @@ export type Reason =
   | "exact-match"
   // incompatible
   | "requirements-not-met"
-  // unknown: certificate checks, discovery, local configuration, monitoring
+  // unknown: certificate checks, discovery, local configuration
   | Exclude<CertificateResult["reason"], "valid">
   | DiscoveryReason
-  | "invalid-requirements"
-  | "timeout"
-  | "expired"
-  | "stopped";
+  | "invalid-requirements";
 
 export interface Result {
   status: Status;
   reason: Reason;
   detail?: string;
   statementId?: string;
-  /** Set by monitors. */
-  checkedAt?: number;
 }
 
 /** What a client's correctness proof assumes about one endpoint. */
@@ -54,27 +49,6 @@ export interface Dependency
   extends Requirement,
     Omit<QueryOptions, "signal" | "timeout"> {
   url: string;
-}
-
-export interface WatchOptions {
-  interval: number;
-  /** Bound on one check, including verification. Default 10 s. */
-  timeout?: number | undefined;
-  /** Age at which a verified result stops gating requests, measured from
-   * the start of its check. Default max(interval, timeout) + timeout. */
-  maxAge?: number | undefined;
-  /** Called on the first result, on expiry, and whenever the status, reason
-   * or certified statement changes. */
-  onChange?(result: Result): void;
-  signal?: AbortSignal | undefined;
-}
-
-export interface Monitor {
-  refresh(): Promise<Result>;
-  stop(): void;
-  readonly current: Result | undefined;
-  /** Throw unless the latest result is verified and younger than `maxAge`. */
-  requireVerified(): Result;
 }
 
 export interface ClientOptions extends VerifierOptions {

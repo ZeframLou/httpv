@@ -28,16 +28,14 @@ const server = Bun.serve({
 const url = `http://127.0.0.1:${server.port}/units`;
 
 // Client: requirements.json is the supplier claim its own proof assumes.
-const monitor = createHTTPV().watch(
-  {
-    url,
-    method: "POST",
-    allowInsecureHttp: true,
-    requirements,
-    axioms: {},
-  },
-  { interval: 60_000 },
-);
+const httpv = createHTTPV();
+const inventory = {
+  url,
+  method: "POST",
+  allowInsecureHttp: true,
+  requirements,
+  axioms: {},
+};
 
 const versions: [string, Certificate][] = [
   ["V1", v1],
@@ -46,15 +44,11 @@ const versions: [string, Certificate][] = [
 ];
 for (const [name, certificate] of versions) {
   published = certificate;
-  const result = await monitor.refresh();
-  let outcome: string;
-  try {
-    monitor.requireVerified();
-    outcome = await fetch(url, { method: "POST" }).then((r) => r.text());
-  } catch {
-    outcome = "request blocked";
-  }
+  const result = await httpv.check(inventory);
+  const outcome =
+    result.status === "verified"
+      ? await fetch(url, { method: "POST" }).then((r) => r.text())
+      : "request blocked";
   console.log(`${name}: ${result.status} (${result.reason}) -> ${outcome}`);
 }
-monitor.stop();
 server.stop(true);

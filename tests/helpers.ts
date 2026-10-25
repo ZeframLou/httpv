@@ -92,17 +92,3 @@ export function gate() {
   const closed = new Promise<void>((resolve) => (open = resolve));
   return { closed, open };
 }
-
-/** The same backend, running `before` ahead of each verification. */
-export function slow(
-  backend: ProofBackend,
-  before: () => unknown,
-): ProofBackend {
-  return {
-    identity: backend.identity,
-    async verify(certificate) {
-      await before();
-      return backend.verify(certificate);
-    },
-  };
-}
