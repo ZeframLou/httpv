@@ -97,6 +97,7 @@ test("a result's age counts from its request, so a slow check can arrive expired
   try {
     const result = await monitor.refresh();
     expect(result).toMatchObject({ status: "unknown", reason: "expired" });
+    expect(result.checkedAt!).toBeGreaterThanOrEqual(started);
     expect(result.checkedAt!).toBeLessThan(started + 50);
     expect(reasons).toEqual(["expired"]);
   } finally {

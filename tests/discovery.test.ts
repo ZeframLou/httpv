@@ -218,9 +218,6 @@ test("responses are classified as SPEC 4.3 says", async () => {
       broken.query("https://example.test/r", { method: "POST" }),
     ).rejects.toMatchObject({ reason: "unavailable" });
   }
-
-  for (const maxResponseBytes of [Number.NaN, Infinity, 0, 1024])
-    expect(() => createHTTPV({ maxResponseBytes })).toThrow(RangeError);
 });
 
 test("only an explicit media range with a valid non-zero weight is discovery", async () => {
@@ -297,4 +294,50 @@ test("a caller's signal cancels discovery without removing the timeout", async (
   expect(
     await Promise.race([timedOut.catch((error) => error), hung()]),
   ).toMatchObject({ reason: "unavailable" });
+});
+
+test("check() reports why discovery failed, for any method spelling", async () => {
+  const dependency = (url: string) => ({
+    url,
+    method: "post",
+    requirements: inventory().exact,
+    axioms: {},
+  });
+  const answering = (body: unknown, status = 200) =>
+    createHTTPV({
+      fetch: async () =>
+        Response.json(body, {
+          status,
+          headers: { "content-type": MEDIA_TYPE },
+        }),
+    });
+  const url = "https://example.test/r";
+  expect(await answering({}, 404).check(dependency(url))).toMatchObject({
+    status: "unknown",
+    reason: "missing-certificate",
+  });
+  expect(
+    await answering({
+      format: "httpv/1",
+      certificates: { POST: malformed },
+    }).check(dependency(url)),
+  ).toMatchObject({ status: "unknown", reason: "invalid-advertisement" });
+  // "post" is looked up as POST: the certificate is found and judged, here
+  // against a policy that accepts none of its axioms.
+  expect(
+    await answering({
+      format: "httpv/1",
+      certificates: { POST: v1 },
+    }).check(dependency(url)),
+  ).toMatchObject({ status: "unknown", reason: "forbidden-axiom" });
+  for (const bad of [
+    "http://127.0.0.1.evil.example/r",
+    "https://:pw@example.test/r",
+  ])
+    expect(
+      await answering({}).check({
+        ...dependency(bad),
+        allowInsecureHttp: true,
+      }),
+    ).toMatchObject({ status: "unknown", reason: "unavailable" });
 });

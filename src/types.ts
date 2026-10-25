@@ -79,8 +79,6 @@ export interface Monitor {
 
 export interface ClientOptions extends VerifierOptions {
   fetch?: (input: URL, init: RequestInit) => Promise<Response>;
-  /** Largest discovery response to read; at least 64 KiB, the default. */
-  maxResponseBytes?: number | undefined;
 }
 
 export type Handler = (request: Request) => Response | Promise<Response>;

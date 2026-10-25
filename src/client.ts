@@ -18,7 +18,7 @@ import type {
   WatchOptions,
 } from "./types.ts";
 
-/** Every client accepts responses this large (SPEC 4.3). */
+/** Every client accepts responses this large (SPEC 4.3), and reads no more. */
 const MAX_DISCOVERY_BYTES = 64 * 1024;
 
 /** Plain HTTP is only for a server on this machine. */
@@ -59,11 +59,6 @@ async function readJSON(response: Response, limit: number): Promise<unknown> {
 export function createHTTPV(options: ClientOptions = {}) {
   const transport = options.fetch ?? fetch;
   const { verify } = createVerifier(options);
-  const maxBytes = options.maxResponseBytes ?? MAX_DISCOVERY_BYTES;
-  if (!Number.isSafeInteger(maxBytes) || maxBytes < MAX_DISCOVERY_BYTES)
-    throw new RangeError(
-      "maxResponseBytes must be an integer of at least 64 KiB",
-    );
 
   /** Fetch the certificate for one method of a resource. Throws DiscoveryError
    * when discovery fails. */
@@ -127,7 +122,7 @@ export function createHTTPV(options: ClientOptions = {}) {
         `discovery returned ${response.status} ${type ?? "without a media type"}`,
       );
     }
-    return parseDiscovery(await readJSON(response, maxBytes), name);
+    return parseDiscovery(await readJSON(response, MAX_DISCOVERY_BYTES), name);
   }
 
   /** Decide whether a certificate establishes a requirement. */

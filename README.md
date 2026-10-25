@@ -106,8 +106,7 @@ Bun.serve({
 dependent request on the latest check.
 
 ```ts
-import { createHTTPV } from "httpv";
-import { standardAxioms } from "zklean";
+import { createHTTPV, standardAxioms } from "httpv";
 
 const monitor = createHTTPV().watch(
   {
