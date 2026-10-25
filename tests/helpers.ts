@@ -1,6 +1,7 @@
 import { createHash, generateKeyPairSync, sign, verify } from "node:crypto";
 import type { Certificate, ProofBackend, Requirements } from "zklean";
 import {
+  PROOF_BYTES,
   canonical,
   decodeBase64,
   encodeBase64,
@@ -27,7 +28,7 @@ export function inventory() {
   const backend: ProofBackend = {
     identity: `test:${publicKey.export({ type: "spki", format: "der" }).toString("hex")}`,
     async verify(certificate) {
-      // The 64-byte signature leads the proof's fixed 260 bytes.
+      // The 64-byte signature leads the fixed-size proof.
       return verify(
         null,
         signed(certificate),
@@ -52,7 +53,7 @@ export function inventory() {
       proof: encodeBase64(
         Buffer.concat([
           sign(null, signed(unsigned), privateKey),
-          Buffer.alloc(260 - 64),
+          Buffer.alloc(PROOF_BYTES - 64),
         ]),
       ),
     };
