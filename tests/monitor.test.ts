@@ -1,18 +1,17 @@
 import { expect, test } from "bun:test";
 import { createHTTPV, MEDIA_TYPE } from "../src/index.ts";
 import type { Result } from "../src/index.ts";
-import { advertise, axioms, inventory, listen, operation } from "./helpers.ts";
+import { axioms, inventory, listen } from "./helpers.ts";
 
 function setup() {
   const fixtures = inventory();
   const versions = [fixtures.v1, fixtures.v2, fixtures.v3];
-  let current = advertise(fixtures.v1);
+  let current = fixtures.v1;
   const app = listen(() => current);
   const dependency = {
     url: app.url,
     method: "POST",
     allowInsecureHttp: true,
-    operation,
     requirements: fixtures.exact,
     axioms,
   };
@@ -21,8 +20,8 @@ function setup() {
     v1: fixtures.v1,
     app,
     dependency,
-    serveVersion(index: number, name = operation) {
-      current = advertise(versions[index]!, name);
+    serveVersion(index: number) {
+      current = versions[index]!;
     },
   };
 }
@@ -103,7 +102,7 @@ test("polling reports an unavailable dependency and stops on an external signal"
     fetch: async () =>
       ++calls === 1
         ? Response.json(
-            { format: "httpv/1", contracts: { POST: advertise(v1) } },
+            { format: "httpv/1", certificates: { POST: v1 } },
             { headers: { "content-type": MEDIA_TYPE } },
           )
         : new Response("offline", { status: 503 }),
@@ -148,28 +147,6 @@ test("expiry is notified, and so is recovery with the same certificate", async (
     await Bun.sleep(100);
     await monitor.refresh();
     expect(reasons).toEqual(["exact-match", "expired", "exact-match"]);
-  } finally {
-    monitor.stop();
-  }
-});
-
-test("a change of advertised operation alone is notified", async () => {
-  const { authority, app, dependency, serveVersion } = setup();
-  using _ = app;
-  const operations: (string | undefined)[] = [];
-  serveVersion(1, "Inventory.restock");
-  const monitor = createHTTPV({ backend: authority.backend }).watch(
-    dependency,
-    {
-      interval: 60_000,
-      onChange: (result) => operations.push(result.advertisedOperation),
-    },
-  );
-  try {
-    await monitor.refresh();
-    serveVersion(1, "Inventory.audit");
-    expect((await monitor.refresh()).reason).toBe("operation-mismatch");
-    expect(operations).toEqual(["Inventory.restock", "Inventory.audit"]);
   } finally {
     monitor.stop();
   }

@@ -1,7 +1,9 @@
 import { expect, test } from "bun:test";
 import { createHTTPV, MEDIA_TYPE, serve } from "../src/index.ts";
 import { methodName } from "../src/protocol.ts";
-import { advertise, inventory, listen } from "./helpers.ts";
+import { inventory, listen } from "./helpers.ts";
+
+const malformed = { ...inventory().v1, extra: 1 };
 
 const local = { method: "POST", allowInsecureHttp: true };
 const { v1, v3 } = inventory();
@@ -13,10 +15,10 @@ function respond(body: unknown, init: ResponseInit = {}) {
   });
 }
 
-test("OPTIONS with the HTTPV media type returns the advertisement; other requests pass through", async () => {
-  using app = listen(advertise(v1));
+test("OPTIONS with the HTTPV media type returns the certificate; other requests pass through", async () => {
+  using app = listen(v1);
   const httpv = createHTTPV();
-  expect(await httpv.query(app.url, local)).toEqual(advertise(v1));
+  expect(await httpv.query(app.url, local)).toEqual(v1);
 
   const discovery = await fetch(app.url, {
     method: "OPTIONS",
@@ -40,14 +42,14 @@ test("OPTIONS with the HTTPV media type returns the advertisement; other request
   );
 });
 
-test("providers run per request, so the certificate and entrypoint change together", async () => {
-  let current = advertise(v1);
+test("providers run per request", async () => {
+  let current = v1;
   using app = listen(() => current);
   const httpv = createHTTPV();
-  expect(await httpv.query(app.url, local)).toEqual(advertise(v1));
-  current = advertise(v3);
+  expect(await httpv.query(app.url, local)).toEqual(v1);
+  current = v3;
   expect(await httpv.query(app.url, local)).toEqual(current);
-  current = advertise(v1, "");
+  current = malformed;
   expect(
     (
       await fetch(app.url, {
@@ -61,15 +63,11 @@ test("providers run per request, so the certificate and entrypoint change togeth
 test("routes are validated at startup", () => {
   const fetch = () => new Response();
   for (const route of ["POST", "POST reservations", "POST /a?b", "BAD() /a"])
-    expect(() =>
-      serve({ routes: { [route]: advertise(v1) }, fetch }),
-    ).toThrow();
-  expect(() =>
-    serve({ routes: { "POST /a": advertise(v1, "") }, fetch }),
-  ).toThrow("nonempty");
+    expect(() => serve({ routes: { [route]: v1 }, fetch })).toThrow();
+  expect(() => serve({ routes: { "POST /a": malformed }, fetch })).toThrow();
   expect(() =>
     serve({
-      routes: { "POST /a": advertise(v1), "post /a": advertise(v1) },
+      routes: { "POST /a": v1, "post /a": v1 },
       fetch,
     }),
   ).toThrow("duplicate");
@@ -80,10 +78,10 @@ test("routes are validated at startup", () => {
 test("discovery accepts only the closed httpv/1 envelope", async () => {
   for (const body of [
     { certificates: { POST: v1 } },
-    { format: "httpv/2", contracts: { POST: advertise(v1) } },
-    { format: "httpv/1", contracts: { POST: advertise(v1) }, extra: 1 },
+    { format: "httpv/2", certificates: { POST: v1 } },
+    { format: "httpv/1", certificates: { POST: v1 }, extra: 1 },
     { format: "httpv/1", contracts: { POST: v1 } },
-    { format: "httpv/1", contracts: { POST: advertise(v1, "") } },
+    { format: "httpv/1", certificates: { POST: malformed } },
   ])
     await expect(
       respond(body).query("https://example.test/r", { method: "POST" }),
@@ -112,7 +110,7 @@ test("discovery refuses redirects, wrong media types, failures and oversized bod
   });
 
   const plainJson = createHTTPV({
-    fetch: async () => Response.json({ format: "httpv/1", contracts: {} }),
+    fetch: async () => Response.json({ format: "httpv/1", certificates: {} }),
   });
   await expect(
     plainJson.query("https://example.test/r", { method: "POST" }),
@@ -125,7 +123,7 @@ test("discovery refuses redirects, wrong media types, failures and oversized bod
 });
 
 test("q=0 declines discovery, and a __proto__ method is still advertised", async () => {
-  using app = listen(advertise(v1));
+  using app = listen(v1);
   for (const accept of [`${MEDIA_TYPE};q=0, */*`, `${MEDIA_TYPE}; q = 0.000`])
     expect(
       await fetch(app.url, {
@@ -138,7 +136,7 @@ test("q=0 declines discovery, and a __proto__ method is still advertised", async
     hostname: "127.0.0.1",
     port: 0,
     ...serve({
-      routes: { "__proto__ /r": advertise(v1) },
+      routes: { "__proto__ /r": v1 },
       fetch: () => new Response(),
     }),
   });
@@ -148,7 +146,7 @@ test("q=0 declines discovery, and a __proto__ method is still advertised", async
         ...local,
         method: "__proto__",
       }),
-    ).toEqual(advertise(v1));
+    ).toEqual(v1);
   } finally {
     server.stop(true);
   }

@@ -24,25 +24,25 @@ The key words MUST, MUST NOT, SHOULD, and MAY follow RFC 2119 and RFC 8174.
   the proofs use, plus a succinct proof and an unproved pointer to their Lean
   source.
 - **Operation:** the Lean function that defines an endpoint's behavior.
-- **Advertisement:** an operation name and a certificate for one HTTP method of
-  one resource.
+- **Endpoint:** one HTTP method of one resource, with its own certificate.
 - **Requirements:** the claims, by name and identity, that a client's proof
-  assumes about an operation.
+  assumes about an endpoint.
 
 ## 3. Trust model
 
 ZKLean attests that the certified propositions have valid derivations under the
 declared axioms, assuming its proof checker and proof system are sound. HTTPS
-authenticates which advertisement a server currently publishes for a resource.
+authenticates which certificates a server currently publishes for a resource.
 
-Clients still trust the server to deploy behavior matching its advertisement.
+Clients still trust the server to deploy behavior matching each endpoint's
+certificate, and to certify only claims about that endpoint.
 HTTPV does not attest deployed code, prove individual responses, or detect a
-change in behavior under an unchanged advertisement. A client's guarantees
+change in behavior under an unchanged certificate. A client's guarantees
 remain conditional on its dependencies meeting the specifications it relies on.
 
 ## 4. Discovery
 
-A client requests advertisements with `OPTIONS`:
+A client requests a resource's certificates with `OPTIONS`:
 
 ```http
 OPTIONS /reservations HTTP/1.1
@@ -61,38 +61,35 @@ Vary: Accept
 
 {
   "format": "httpv/1",
-  "contracts": {
+  "certificates": {
     "POST": {
-      "operation": "Inventory.POST_reservations",
-      "certificate": {
-        "format": "zklean/1",
-        "claims": { "Inventory.reservation_safe": "56b0…" },
-        "axioms": { "propext": "b75a…" },
-        "source": "https://example.com/inventory.ndjson",
-        "proof": "base64:..."
-      }
+      "format": "zklean/1",
+      "claims": { "Inventory.reservation_safe": "56b0…" },
+      "axioms": { "propext": "b75a…" },
+      "source": "https://example.com/inventory.ndjson",
+      "proof": "base64:..."
     }
   }
 }
 ```
 
-The envelope and each advertisement are closed objects: they MUST contain
-exactly the fields shown, and clients MUST reject anything else. Extensions
-require a new `format`. `contracts` maps HTTP methods to advertisements.
+The envelope is a closed object: it MUST contain exactly the fields shown, and
+clients MUST reject anything else. Extensions require a new `format`.
+`certificates` maps each HTTP method to that endpoint's certificate.
 
 `source` is the URL of a Lean export containing every named declaration. It is
 not part of the proved statement. Clients MUST NOT rely on it except to obtain
 Lean declarations, and MUST discard any that do not reproduce the certified
 identities.
 
-`operation` MUST be nonempty. It states which function in the certificate's
-claims the endpoint implements, so one certificate MAY serve several endpoints.
-The server MUST describe the behavior of that method and resource with that
-operation, and the operation MUST state the inputs it covers. Parameterized
-routes MAY share an operation when it covers the whole parameter domain.
+Each certificate MUST describe only its own endpoint, so a change to one
+endpoint never disturbs clients of another. Its claims MAY mention other
+endpoints' behavior when that is part of this endpoint's guarantee. The model
+MUST state the inputs it covers; parameterized routes MAY share a certificate
+when it covers the whole parameter domain.
 
 The response MUST reflect what the server currently advertises. Servers SHOULD
-send `Cache-Control: no-store`. A resource without advertisements returns 404.
+send `Cache-Control: no-store`. A resource without certificates returns 404.
 Requests without the HTTPV media type are ordinary HTTP requests.
 
 Clients MUST use HTTPS outside local development and MUST NOT follow redirects.
@@ -104,21 +101,19 @@ correctness specification and `Rᵢ` are the claims it assumes about dependency
 `i`. The proof stays applicable while each dependency certifies every `Rᵢ`. A
 valid certificate alone MUST NOT be treated as establishing this.
 
-A client checks an advertisement against its requirements and expected
-operation:
+A client checks an endpoint's certificate against its requirements:
 
 1. **Certificate.** Verify the certificate with a client-selected verifier and
    reject axioms outside the client's policy. Discovery MUST NOT select the
    verifier or its keys.
-2. **Operation.** The advertised operation MUST equal the expected one.
-3. **Claims.** Every required claim MUST be certified with the same identity.
+2. **Claims.** Every required claim MUST be certified with the same identity.
    Extra remote claims are permitted.
 
 Comparison is identity equality. It is sound because an identity binds the
 names and content of everything a statement refers to, including the
 operation's body: equal identities mean the same statement about the same
-function. The client MUST ensure its requirements are about the operation it
-expects. If its proof needs a weaker property, it proves that from the remote
+function. The client MUST ensure its requirements are about the function it
+expects the endpoint to implement. If its proof needs a weaker property, it proves that from the remote
 claims itself and requires those claims; HTTPV does not search for
 implications. Names must stay stable: a renamed or redefined operation needs
 new, reviewed requirements.
@@ -128,8 +123,8 @@ new, reviewed requirements.
 A check has one of three outcomes. Applications choose how to handle each.
 
 - **`verified`:** the certificate is valid and certifies every required claim.
-- **`incompatible`:** the certificate is valid, but the operation differs or a
-  required claim is missing or different.
+- **`incompatible`:** the certificate is valid, but a required claim is
+  missing or different.
 - **`unknown`:** discovery failed, the certificate is invalid, the
   requirements are unusable, or the check did not finish.
 
@@ -138,7 +133,7 @@ Implementations MUST NOT report `unknown` as `verified`.
 ## 7. Monitoring
 
 Clients SHOULD recheck dependencies periodically and MUST re-establish
-compatibility whenever the advertisement changes. Each client chooses its
+compatibility whenever the certificate changes. Each client chooses its
 interval, requirements, axiom policy, and failure policy.
 
 A monitor MUST bound each check, including verification, by a timeout, and MUST
@@ -154,6 +149,6 @@ guarantees need execution attestation or per-response proofs.
 ## 8. Non-goals
 
 HTTPV does not provide hardware or code attestation, per-request proofs,
-detection of behavior changes under an unchanged advertisement, automatic
+detection of behavior changes under an unchanged certificate, automatic
 specifications or implication proofs, proofs that external axioms are true, or
 any change to ordinary HTTP semantics.

@@ -1,10 +1,6 @@
-import {
-  MEDIA_TYPE,
-  encodeDiscovery,
-  methodName,
-  parseAdvertisement,
-} from "./protocol.ts";
-import type { Advertisement, Handler, ServeOptions, Source } from "./types.ts";
+import { parseCertificate } from "zklean";
+import { MEDIA_TYPE, encodeDiscovery, methodName } from "./protocol.ts";
+import type { Certificate, Handler, ServeOptions, Source } from "./types.ts";
 
 /** The HTTPV media type is listed without `q=0`, which means "not acceptable". */
 function acceptsDiscovery(accept: string | null): boolean {
@@ -21,8 +17,8 @@ function acceptsDiscovery(accept: string | null): boolean {
 }
 
 /** Answer HTTPV discovery and pass every other request to `fetch`.
- * Paths match exactly. Static advertisements are validated at startup;
- * providers run on every discovery request, so they can change both fields together. */
+ * Paths match exactly. Static certificates are validated at startup;
+ * providers run on every discovery request. */
 export function serve({ routes, fetch }: ServeOptions): { fetch: Handler } {
   const paths = new Map<string, Map<string, Source>>();
   for (const [route, source] of Object.entries(routes)) {
@@ -39,7 +35,7 @@ export function serve({ routes, fetch }: ServeOptions): { fetch: Handler } {
     if (methods.has(name)) throw new Error(`duplicate route: ${route}`);
     methods.set(
       name,
-      typeof source === "function" ? source : parseAdvertisement(source),
+      typeof source === "function" ? source : parseCertificate(source),
     );
     paths.set(path, methods);
   }
@@ -58,25 +54,25 @@ export function serve({ routes, fetch }: ServeOptions): { fetch: Handler } {
       const methods = paths.get(new URL(request.url).pathname);
       if (!methods)
         return Response.json(
-          { error: "no contract" },
+          { error: "no certificate" },
           { status: 404, headers },
         );
       try {
         // fromEntries defines own properties, so a method named __proto__ works.
-        const contracts: Record<string, Advertisement> = Object.fromEntries(
+        const certificates: Record<string, Certificate> = Object.fromEntries(
           await Promise.all(
             [...methods].map(async ([method, source]) => [
               method,
               typeof source === "function"
-                ? parseAdvertisement(await source())
+                ? parseCertificate(await source())
                 : source,
             ]),
           ),
         );
-        return Response.json(encodeDiscovery(contracts), { headers });
+        return Response.json(encodeDiscovery(certificates), { headers });
       } catch {
         return Response.json(
-          { error: "contract unavailable" },
+          { error: "certificate unavailable" },
           { status: 503, headers },
         );
       }

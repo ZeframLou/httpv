@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { parseCertificate } from "zklean";
 import { createHTTPV } from "../src/index.ts";
 import type { Certificate } from "../src/index.ts";
-import { advertise, listen } from "./helpers.ts";
+import { listen } from "./helpers.ts";
 
 const directory = new URL(
   "../examples/inventory/certificates/",
@@ -10,7 +10,6 @@ const directory = new URL(
 );
 const load = async (name: string) =>
   Bun.file(new URL(`${name}.json`, directory)).json();
-const operation = "UnitInventory.POST_units";
 
 // The example certificates are re-proved separately for the current format;
 // until then this test cannot run.
@@ -26,7 +25,7 @@ test.skipIf(!reproved)(
         parseCertificate(await load(name)),
       ),
     );
-    let served = advertise(v1!, operation);
+    let served = v1!;
     using app = listen(() => served);
     const httpv = createHTTPV();
     // Stated as an axiom in Requirements.lean; it matches V1's theorem.
@@ -34,12 +33,11 @@ test.skipIf(!reproved)(
       url: app.url,
       method: "POST",
       allowInsecureHttp: true,
-      operation,
       requirements: await load("requirements"),
       axioms: {},
     };
     const check = (certificate: Certificate) => {
-      served = advertise(certificate, operation);
+      served = certificate;
       return httpv.check(dependency);
     };
 

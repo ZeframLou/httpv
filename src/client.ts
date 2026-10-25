@@ -7,7 +7,7 @@ import {
   parseDiscovery,
 } from "./protocol.ts";
 import type {
-  Advertisement,
+  Certificate,
   ClientOptions,
   Dependency,
   Monitor,
@@ -53,12 +53,12 @@ export function createHTTPV(options: ClientOptions = {}) {
   if (!positiveInteger(maxBytes))
     throw new RangeError("invalid maxResponseBytes");
 
-  /** Fetch the advertisement for one method of a resource. Throws DiscoveryError
+  /** Fetch the certificate for one method of a resource. Throws DiscoveryError
    * when discovery fails. */
   async function query(
     url: string,
     { method, allowInsecureHttp, signal, timeout = 10_000 }: QueryOptions,
-  ): Promise<Advertisement> {
+  ): Promise<Certificate> {
     const target = new URL(url);
     if (
       target.protocol !== "https:" &&
@@ -108,44 +108,37 @@ export function createHTTPV(options: ClientOptions = {}) {
     return parseDiscovery(body, name);
   }
 
-  /** Decide whether an advertisement establishes a requirement. */
+  /** Decide whether a certificate establishes a requirement. */
   async function compare(
-    advertisement: Advertisement,
+    certificate: Certificate,
     requirement: Requirement,
   ): Promise<Result> {
     // Own the inputs: the caller's objects may change while verification awaits.
-    [advertisement, requirement] = structuredClone([
-      advertisement,
-      requirement,
-    ]);
-    const { certificate, operation: advertised } = advertisement;
+    [certificate, requirement] = structuredClone([certificate, requirement]);
     const { status, reason, ...identity } = await verify(certificate, {
       axioms: requirement.axioms,
     });
-    const base = { ...identity, advertisedOperation: advertised };
     if (status !== "verified")
-      return { ...base, status, reason: reason as Reason };
+      return { ...identity, status, reason: reason as Reason };
 
     let requirements: Requirements;
     try {
       requirements = await loadRequirements(requirement.requirements);
     } catch (error) {
       return {
-        ...base,
+        ...identity,
         status: "unknown",
         reason: "invalid-requirements",
         detail: String(error),
       };
     }
-    if (advertised !== requirement.operation)
-      return { ...base, status: "incompatible", reason: "operation-mismatch" };
     // Same name and identity: the same statement about the same definitions.
     const met = Object.entries(requirements.claims).every(
       ([name, id]) => certificate.claims[name] === id,
     );
     return met
-      ? { ...base, status: "verified", reason: "exact-match" }
-      : { ...base, status: "incompatible", reason: "requirements-not-met" };
+      ? { ...identity, status: "verified", reason: "exact-match" }
+      : { ...identity, status: "incompatible", reason: "requirements-not-met" };
   }
 
   /** Query and compare. Never throws; failures are `unknown` results. */
@@ -202,13 +195,8 @@ export function createHTTPV(options: ClientOptions = {}) {
     };
 
     const notify = (result: Result): void => {
-      const { status, reason, statementId, advertisedOperation } = result;
-      const key = JSON.stringify([
-        status,
-        reason,
-        statementId,
-        advertisedOperation,
-      ]);
+      const { status, reason, statementId } = result;
+      const key = JSON.stringify([status, reason, statementId]);
       if (key === notified) return;
       notified = key;
       try {

@@ -44,10 +44,7 @@ Bun.serve({
   port: 3000,
   ...serve({
     routes: {
-      "POST /reservations": {
-        operation: "Inventory.POST_reservations",
-        certificate,
-      },
+      "POST /reservations": certificate,
     },
     fetch: application,
   }),
@@ -57,18 +54,16 @@ Bun.serve({
 HTTPV answers `OPTIONS` requests that accept `application/httpv+json`; every
 other request goes to your handler. Serving needs no verifier.
 
-Each route binds an `operation`, the Lean function that defines the endpoint's
-behavior, to a certificate whose claims are about it. One certificate can serve
-several endpoints, each naming its own operation. Paths match exactly.
+Give each endpoint its own certificate, with claims about that endpoint's
+behavior, so changing one endpoint never disturbs clients of another. Paths
+match exactly.
 
 To change the certificate without restarting, pass a function instead. It runs
-on every discovery request and returns both fields together:
+on every discovery request:
 
 ```ts
-"POST /reservations": async () => ({
-  operation: "Inventory.POST_reservations",
-  certificate: await Bun.file("./certs/reservations.json").json(),
-}),
+"POST /reservations": async () =>
+  Bun.file("./certs/reservations.json").json(),
 ```
 
 Deploy each certificate with the behavior it describes, and serve it over HTTPS.
@@ -93,7 +88,7 @@ entire certificate.
 ## Choose your requirements
 
 Your **requirements** are the claims your client's proof assumes about the
-API's operation, by name and identity:
+API's endpoint, by name and identity:
 
 ```json
 {
@@ -121,8 +116,8 @@ zklean requirements --claims Inventory.reservation_safe \
 
 Statements can be `axiom`s: an identity covers what a declaration states, not
 how it is proved, so an axiom matches a theorem with the same statement. Make
-sure the claims are about the operation you will call; their identities then
-fix its definition. If your proof needs a weaker property than the API
+sure the claims are about the function the endpoint implements; their
+identities then fix its definition. If your proof needs a weaker property than the API
 certifies, prove it from the API's claims in your own Lean code and require
 those claims. Keep requirements under your control; copying whatever the server
 advertises would defeat the check.
@@ -138,7 +133,6 @@ import { httpv } from "./httpv.ts";
 const inventory = {
   url: "https://inventory.example.com/reservations",
   method: "POST",
-  operation: "Inventory.POST_reservations",
   requirements: "./specs/requirements.json",
   axioms: { propext: standardAxioms.propext },
 };
@@ -148,22 +142,19 @@ if (result.status !== "verified")
   throw new Error(`inventory contract: ${result.status} (${result.reason})`);
 ```
 
-`check` fetches the advertisement, verifies the certificate, confirms the
-advertised operation is the one you expect, and compares identities with your
-requirements. It never throws.
+`check` fetches the endpoint's certificate, verifies it, and compares its claim
+identities with your requirements. It never throws.
 
 | Status         | Meaning                                                          | Reasons                                       |
 | -------------- | ---------------------------------------------------------------- | --------------------------------------------- |
 | `verified`     | The certificate is valid and establishes your requirements.      | `exact-match`                                 |
-| `incompatible` | The certificate is valid but does not establish your requirements. | `operation-mismatch`, `requirements-not-met` |
+| `incompatible` | The certificate is valid but does not establish your requirements. | `requirements-not-met`                        |
 | `unknown`      | Nothing could be established.                                    | Discovery, certificate or configuration failures |
 
-The advertised operation must be the one you expect; otherwise the result is
-`incompatible / operation-mismatch`. Every required claim must be certified
-with the same identity; otherwise it is `incompatible / requirements-not-met`.
-The server may certify extra claims. Because identities hash names and content,
-a matching theorem name with a changed statement, or a redefined operation,
-never matches.
+Every required claim must be certified with the same identity; otherwise the
+result is `incompatible / requirements-not-met`. The server may certify extra
+claims. Because identities hash names and content, a matching theorem name with
+a changed statement, or a redefined operation, never matches.
 
 `axioms` lists the unproved assumptions you accept, by name and identity.
 `standardAxioms` from ZKLean holds Lean's `propext`, `Quot.sound`, and
@@ -172,8 +163,8 @@ using an axiom you did not list is `unknown / forbidden-axiom`, and one whose
 axiom has a different identity is `unknown / axiom-mismatch`.
 
 For lower-level control, `httpv.query(url, { method })` returns the
-advertisement, throwing a `DiscoveryError` if discovery fails, and
-`httpv.compare(advertisement, requirement)` runs the rest of the check.
+certificate, throwing a `DiscoveryError` if discovery fails, and
+`httpv.compare(certificate, requirement)` runs the rest of the check.
 Discovery gives up after `timeout` milliseconds, 10 s by default, even if you
 also pass a `signal`.
 
@@ -202,8 +193,7 @@ process.on("SIGTERM", () => monitor.stop());
 Call `requireVerified()` wherever a request depends on the contract. It throws
 unless the latest result is `verified` and younger than `maxAge`. `onChange` is
 for notifications: it runs on the first result, when a verified result
-expires, and whenever the status, reason, advertised operation, or certificate
-changes. Monitoring continues if it
+expires, and whenever the status, reason, or certified statement changes. Monitoring continues if it
 throws, but the error is reported as uncaught, which ends a Bun process unless
 you handle `uncaughtException`.
 

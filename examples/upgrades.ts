@@ -1,7 +1,7 @@
 /** A supplier upgrades POST /units twice. The client keeps sending requests only
- * while the advertised contract still establishes the requirement its proof uses. */
+ * while the advertised certificate still establishes the requirement its proof uses. */
 import { createHTTPV, serve } from "httpv";
-import type { Advertisement, Certificate } from "httpv";
+import type { Certificate } from "httpv";
 
 const load = (name: string) =>
   Bun.file(
@@ -10,10 +10,9 @@ const load = (name: string) =>
 const [v1, v2, v3, requirements] = await Promise.all(
   ["v1", "v2", "v3", "requirements"].map(load),
 );
-const operation = "UnitInventory.POST_units";
 
 // Supplier: publish the current certificate beside the real endpoint.
-let contract: Advertisement = { operation, certificate: v1 };
+let contract: Certificate = v1;
 let stock = 3;
 const server = Bun.serve({
   hostname: "127.0.0.1",
@@ -34,7 +33,6 @@ const monitor = createHTTPV().watch(
     url,
     method: "POST",
     allowInsecureHttp: true,
-    operation,
     requirements,
     axioms: {},
   },
@@ -47,7 +45,7 @@ const versions: [string, Certificate][] = [
   ["V3 accepts backorders", v3],
 ];
 for (const [name, certificate] of versions) {
-  contract = { operation, certificate };
+  contract = certificate;
   const result = await monitor.refresh();
   let outcome = "request blocked";
   if (result.status === "verified") {

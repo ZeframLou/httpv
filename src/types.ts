@@ -11,7 +11,6 @@ export type Reason =
   // verified
   | "exact-match"
   // incompatible
-  | "operation-mismatch"
   | "requirements-not-met"
   // unknown: certificate checks, discovery, local configuration, monitoring
   | Exclude<CertificateResult["reason"], "valid">
@@ -28,22 +27,12 @@ export interface Result {
   reason: Reason;
   detail?: string;
   statementId?: string;
-  /** Entrypoint the server advertised for this endpoint. */
-  advertisedOperation?: string;
   /** Set by monitors. */
   checkedAt?: number;
 }
 
-export interface Advertisement {
-  readonly operation: string;
-  readonly certificate: Certificate;
-}
-
-/** What a client's correctness proof assumes about one remote operation. */
+/** What a client's correctness proof assumes about one endpoint. */
 export interface Requirement {
-  /** The Lean function the endpoint must implement, which the required claims
-   * are about. Their identities fix its body; this name fixes the endpoint. */
-  operation: string;
   /** A requirements snapshot or the path of its JSON file. */
   requirements: Requirements | string;
   /** Axioms you accept, by name and identity; see zklean's `standardAxioms`. */
@@ -90,9 +79,7 @@ export interface ClientOptions extends VerifierOptions {
 }
 
 export type Handler = (request: Request) => Response | Promise<Response>;
-export type Source =
-  | Advertisement
-  | (() => Advertisement | Promise<Advertisement>);
+export type Source = Certificate | (() => Certificate | Promise<Certificate>);
 export interface ServeOptions {
   routes: Record<string, Source>;
   fetch: Handler;

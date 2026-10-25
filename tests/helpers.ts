@@ -3,13 +3,12 @@ import { canonical, encodeBase64 } from "zklean/encoding";
 import { standardAxioms } from "zklean";
 import type { Certificate, ProofBackend, Requirements } from "zklean";
 import { serve } from "../src/index.ts";
-import type { Advertisement, Source } from "../src/index.ts";
+import type { Source } from "../src/index.ts";
 
 /** A stand-in identity: in real certificates these are Lean closure hashes. */
 export const id = (label: string) =>
   createHash("sha256").update(label).digest("hex");
 
-export const operation = "Inventory.POST_reservations";
 export const axioms = { propext: standardAxioms.propext! };
 
 const statement = ({ format, claims, axioms }: Certificate) =>
@@ -57,7 +56,8 @@ export function requirements(claims: Record<string, string>): Requirements {
 
 /** The inventory story as claim identities. Each identity covers the claim's
  * statement and the operation it is about, so V3, which redefines the
- * operation to accept backorders, certifies a different identity. */
+ * operation to accept backorders, certifies a different identity. Every
+ * certificate serves only POST /reservations. */
 export function inventory(authority = testAuthority()) {
   const safe = { "Inventory.reservation_safe": id("reservation_safe v1") };
   return {
@@ -76,13 +76,6 @@ export function inventory(authority = testAuthority()) {
     /** What a client requiring V1's guarantee stores. */
     exact: requirements(safe),
   };
-}
-
-export function advertise(
-  certificate: Certificate,
-  name = operation,
-): Advertisement {
-  return { operation: name, certificate };
 }
 
 /** Serve one route on a random local port. */

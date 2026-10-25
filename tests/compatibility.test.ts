@@ -4,17 +4,13 @@ import { join } from "node:path";
 import { expect, test } from "bun:test";
 import { createHTTPV } from "../src/index.ts";
 import type { Certificate, Requirement, Requirements } from "../src/index.ts";
-import { advertise, axioms, id, inventory, operation } from "./helpers.ts";
+import { axioms, id, inventory } from "./helpers.ts";
 
 const fixtures = inventory();
 const httpv = createHTTPV({ backend: fixtures.authority.backend });
 
-const compare = (
-  remote: Certificate,
-  overrides: Partial<Requirement> & { as?: string } = {},
-) =>
-  httpv.compare(advertise(remote, overrides.as), {
-    operation,
+const compare = (remote: Certificate, overrides: Partial<Requirement> = {}) =>
+  httpv.compare(remote, {
     requirements: fixtures.exact,
     axioms,
     ...overrides,
@@ -32,17 +28,6 @@ test("a redefined operation changes the claim's identity", async () => {
   expect(await compare(fixtures.v3)).toMatchObject({
     status: "incompatible",
     reason: "requirements-not-met",
-  });
-});
-
-test("the advertised operation must be the expected one", async () => {
-  // A certificate shared across endpoints still has to name this endpoint.
-  expect(
-    await compare(fixtures.v2, { as: "Inventory.DELETE_reservations" }),
-  ).toMatchObject({
-    status: "incompatible",
-    reason: "operation-mismatch",
-    advertisedOperation: "Inventory.DELETE_reservations",
   });
 });
 
@@ -87,12 +72,11 @@ test("unusable requirements fail closed", async () => {
 });
 
 test("mutating the inputs during verification cannot change what is compared", async () => {
-  const supplied = advertise(structuredClone(fixtures.v3));
+  const supplied = structuredClone(fixtures.v3);
   const pending = httpv.compare(supplied, {
-    operation,
     requirements: fixtures.exact,
     axioms,
   });
-  Object.assign(supplied.certificate, structuredClone(fixtures.v1));
+  Object.assign(supplied, structuredClone(fixtures.v1));
   expect(await pending).toMatchObject({ status: "incompatible" });
 });

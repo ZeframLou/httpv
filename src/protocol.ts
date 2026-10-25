@@ -1,5 +1,5 @@
 import { object, parseCertificate } from "zklean/encoding";
-import type { Advertisement } from "./types.ts";
+import type { Certificate } from "./types.ts";
 
 export const MEDIA_TYPE = "application/httpv+json";
 export const FORMAT = "httpv/1";
@@ -37,37 +37,28 @@ function exactFields(
   return data;
 }
 
-/** The operation names the Lean function the endpoint implements. */
-export function parseAdvertisement(value: unknown): Advertisement {
-  const data = exactFields(value, ["certificate", "operation"]);
-  if (typeof data.operation !== "string" || !data.operation)
-    throw new Error("operation must be a nonempty string");
-  return {
-    operation: data.operation,
-    certificate: parseCertificate(data.certificate),
-  };
+/** Each method of a resource has its own certificate, so a change to one
+ * endpoint's certificate leaves its siblings' clients undisturbed. */
+export function encodeDiscovery(certificates: Record<string, Certificate>) {
+  return { format: FORMAT, certificates };
 }
 
-export function encodeDiscovery(contracts: Record<string, Advertisement>) {
-  return { format: FORMAT, contracts };
-}
-
-export function parseDiscovery(value: unknown, method: string): Advertisement {
-  let contracts: Record<string, unknown>;
+export function parseDiscovery(value: unknown, method: string): Certificate {
+  let certificates: Record<string, unknown>;
   try {
-    const body = exactFields(value, ["contracts", "format"]);
+    const body = exactFields(value, ["certificates", "format"]);
     if (body.format !== FORMAT) throw new Error("unsupported format");
-    contracts = object(body.contracts);
+    certificates = object(body.certificates);
   } catch (error) {
     throw new DiscoveryError("invalid-advertisement", String(error));
   }
-  if (!Object.hasOwn(contracts, method))
+  if (!Object.hasOwn(certificates, method))
     throw new DiscoveryError(
       "missing-certificate",
-      `no contract for ${method}`,
+      `no certificate for ${method}`,
     );
   try {
-    return parseAdvertisement(contracts[method]);
+    return parseCertificate(certificates[method]);
   } catch (error) {
     throw new DiscoveryError("invalid-advertisement", String(error));
   }

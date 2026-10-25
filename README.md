@@ -54,7 +54,6 @@ const monitor = createHTTPV().watch(
   {
     url: "https://inventory.example.com/reservations",
     method: "POST",
-    operation: "Inventory.POST_reservations",
     requirements: "./specs/requirements.json",
     axioms: { propext: standardAxioms.propext },
   },
