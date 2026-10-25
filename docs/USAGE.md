@@ -95,7 +95,8 @@ its **verifying key**, the public key that identifies ZKLean's checker program.
 The key is pinned in the SDK, never taken from the API being checked. The
 client needs no native executable, prover, or Lean process.
 
-To use another verifier, pass `createHTTPV({ backend })`. A backend has an
+To use another transport, pass `createHTTPV({ fetch })`; it must not follow
+redirects or relax TLS. To use another verifier, pass `createHTTPV({ backend })`. A backend has an
 `identity` string describing its trusted configuration and an async
 `verify(certificate)` returning a boolean. It is trusted to decide whether the
 proof establishes the certificate's claims and axioms.
@@ -154,7 +155,9 @@ if (result.status !== "verified")
 ```
 
 `check` fetches the endpoint's certificate, verifies it, and compares its claim
-identities with your requirements. It never throws.
+identities with your requirements. It never throws. A result that got as far as
+verifying carries `statementId`, which changes whenever the certified claims or
+axioms do.
 
 | Status         | Meaning                                                               | Reason                 |
 | -------------- | --------------------------------------------------------------------- | ---------------------- |
@@ -192,9 +195,13 @@ HTTPV:
 
 ```ts
 let latest = await httpv.check(inventory);
-setInterval(async () => {
-  latest = await httpv.check(inventory);
-}, 60_000);
+(async () => {
+  // One check at a time, so an older one can never overwrite a newer result.
+  for (;;) {
+    await Bun.sleep(60_000);
+    latest = await httpv.check(inventory);
+  }
+})();
 
 async function reserve(quantity: number) {
   if (latest.status !== "verified")

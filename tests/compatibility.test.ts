@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { createHTTPV, MEDIA_TYPE } from "../src/index.ts";
 import type { Certificate, Requirement } from "../src/index.ts";
-import { axioms, gate, id, inventory } from "./helpers.ts";
+import { axioms, id, inventory } from "./helpers.ts";
 
 const fixtures = inventory();
 const httpv = createHTTPV({ backend: fixtures.backend });
@@ -18,6 +18,8 @@ test("an upgrade that adds claims keeps an exact match", async () => {
     expect(await compare(remote)).toMatchObject({
       status: "verified",
       reason: "exact-match",
+      // What was certified, for noticing a new certificate.
+      statementId: expect.stringMatching(/^[0-9a-f]{64}$/),
     });
 });
 
@@ -74,11 +76,12 @@ test("mutating the inputs during verification cannot change what is compared", a
 });
 
 test("a dependency changed during discovery is checked as it was", async () => {
-  const discovery = gate();
+  let open!: () => void;
+  const discovery = new Promise<void>((resolve) => (open = resolve));
   const client = createHTTPV({
     backend: fixtures.backend,
     fetch: async () => {
-      await discovery.closed;
+      await discovery;
       return Response.json(
         { format: "httpv/1", certificates: { POST: fixtures.v3 } },
         { headers: { "content-type": MEDIA_TYPE } },
@@ -93,6 +96,6 @@ test("a dependency changed during discovery is checked as it was", async () => {
   };
   const pending = client.check(dependency);
   dependency.requirements = { ...fixtures.exact, claims: fixtures.v3.claims };
-  discovery.open();
+  open();
   expect(await pending).toMatchObject({ status: "incompatible" });
 });

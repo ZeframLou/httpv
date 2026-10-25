@@ -1,7 +1,7 @@
 {
   "name": "httpv",
   "version": "0.1.0",
-  "description": "Discover and verify formal API contracts over HTTP",
+  "description": "Discover and verify certificates of API behavior over HTTP",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/ZeframLou/httpv.git"

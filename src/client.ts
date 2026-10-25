@@ -16,21 +16,21 @@ import type {
   Result,
 } from "./types.ts";
 
-/** Every client accepts responses this large (SPEC 4.3), and reads no more. */
+/** Every client accepts responses this large (SPEC 3.3), and reads no more. */
 const MAX_DISCOVERY_BYTES = 64 * 1024;
 
 /** Plain HTTP is only for a server on this machine. */
 const loopback = (host: string) =>
   host === "localhost" || host === "[::1]" || /^127\.\d+\.\d+\.\d+$/.test(host);
 
-/** Read at most `limit` bytes. A failed read is a transport error; content
+/** Read at most MAX_DISCOVERY_BYTES. A failed read is a transport error; content
  * that is too large or not UTF-8 JSON is the server's error. */
-async function readJSON(response: Response, limit: number): Promise<unknown> {
+async function readJSON(response: Response): Promise<unknown> {
   const chunks: Uint8Array[] = [];
   let size = 0;
   try {
     for await (const chunk of response.body ?? []) {
-      if ((size += chunk.byteLength) > limit)
+      if ((size += chunk.byteLength) > MAX_DISCOVERY_BYTES)
         throw new DiscoveryError(
           "invalid-advertisement",
           "discovery response too large",
@@ -108,7 +108,7 @@ export function createHTTPV(options: ClientOptions = {}) {
       .toLowerCase();
     if (response.status !== 200 || type !== MEDIA_TYPE) {
       await response.body?.cancel().catch(() => {});
-      // The classification table in SPEC 4.3.
+      // The classification table in SPEC 3.3.
       const reason =
         type === MEDIA_TYPE && response.ok
           ? "invalid-advertisement"
@@ -120,7 +120,7 @@ export function createHTTPV(options: ClientOptions = {}) {
         `discovery returned ${response.status} ${type ?? "without a media type"}`,
       );
     }
-    return parseDiscovery(await readJSON(response, MAX_DISCOVERY_BYTES), name);
+    return parseDiscovery(await readJSON(response), name);
   }
 
   /** Decide whether a certificate establishes a requirement. */

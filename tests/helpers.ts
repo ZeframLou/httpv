@@ -71,24 +71,17 @@ export function inventory() {
 }
 
 /** Serve one route on a random local port. */
-export function listen(
-  source: Source,
-  fetch = (request: Request) => Response.json({ method: request.method }),
-) {
+export function listen(source: Source) {
   const server = Bun.serve({
     hostname: "127.0.0.1",
     port: 0,
-    ...serve({ routes: { "POST /reservations": source }, fetch }),
+    ...serve({
+      routes: { "POST /reservations": source },
+      fetch: (request) => Response.json({ method: request.method }),
+    }),
   });
   return {
     url: `http://127.0.0.1:${server.port}/reservations`,
     [Symbol.dispose]: () => server.stop(true),
   };
-}
-
-/** A promise that resolves when `open` is called. */
-export function gate() {
-  let open!: () => void;
-  const closed = new Promise<void>((resolve) => (open = resolve));
-  return { closed, open };
 }

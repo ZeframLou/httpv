@@ -2,9 +2,11 @@ import { parseCertificate } from "zklean";
 import { FORMAT, MEDIA_TYPE, methodName } from "./protocol.ts";
 import type { Certificate, Handler, ServeOptions, Source } from "./types.ts";
 
-/** Whether `Accept` lists the HTTPV media type, other than with weight 0. */
+/** Whether `Accept` lists the HTTPV media type, other than with weight 0.
+ * Quoted strings are blanked first, since they may contain commas. */
 function acceptsDiscovery(accept: string | null): boolean {
   return (accept ?? "")
+    .replace(/"(?:\\.|[^"\\])*"/g, '""')
     .toLowerCase()
     .split(",")
     .some((range) => {
@@ -28,7 +30,7 @@ export function serve({ routes, fetch }: ServeOptions): { fetch: Handler } {
     // A path the URL parser would rewrite could never match a request.
     if (
       extra !== undefined ||
-      // A runtime may present `OPTIONS *` as the path `/*` (SPEC 4.1).
+      // A runtime may present `OPTIONS *` as the path `/*` (SPEC 3.1).
       path === "/*" ||
       new URL(path, "http://host").pathname !== path
     )
@@ -76,10 +78,7 @@ export function serve({ routes, fetch }: ServeOptions): { fetch: Handler } {
           },
         );
       } catch {
-        return new Response(null, {
-          status: 503,
-          headers: { "Cache-Control": "no-store" },
-        });
+        return new Response(null, { status: 503 });
       }
     },
   };

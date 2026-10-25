@@ -130,7 +130,7 @@ test("discovery accepts only the closed httpv/1 envelope", async () => {
     ).rejects.toMatchObject({ reason: "invalid-advertisement" });
 });
 
-test("responses are classified as SPEC 4.3 says", async () => {
+test("responses are classified as SPEC 3.3 says", async () => {
   // A valid envelope padded to exactly 64 KiB is read; one byte more is not.
   const sent: RequestInit[] = [];
   const padded = (size: number) =>
@@ -162,6 +162,15 @@ test("responses are classified as SPEC 4.3 says", async () => {
   });
 
   const envelope = { format: "httpv/1", certificates: { POST: v1 } };
+  const shouted = createHTTPV({
+    fetch: async () =>
+      Response.json(envelope, {
+        headers: { "content-type": "Application/HTTPV+JSON; charset=utf-8" },
+      }),
+  });
+  expect(
+    await shouted.query("https://example.test/r", { method: "POST" }),
+  ).toEqual(v1);
   const plainJson = createHTTPV({ fetch: async () => Response.json(envelope) });
   await expect(
     plainJson.query("https://example.test/r", { method: "POST" }),
@@ -235,6 +244,7 @@ test("the media type must be listed, and not declined with weight 0", async () =
     "application/*",
     `${MEDIA_TYPE};q=0, */*`,
     `${MEDIA_TYPE}; q=0.000`,
+    `text/plain;x=",${MEDIA_TYPE},"`,
   ])
     expect(await media(accept)).not.toBe(MEDIA_TYPE);
   // A CORS preflight is the application's to answer.
@@ -243,17 +253,23 @@ test("the media type must be listed, and not declined with weight 0", async () =
   ).not.toBe(MEDIA_TYPE);
 });
 
-test("a method named __proto__ is still advertised", async () => {
+test("standard methods are case-insensitive, extension methods are not", async () => {
   const app = serve({
-    routes: { "__proto__ /r": v1 },
+    routes: { "GET /r": v1, "PATCH /r": v3, "__proto__ /r": v1 },
     fetch: () => new Response(),
   });
   const httpv = createHTTPV({
     fetch: async (url, init) => app.fetch(new Request(url, init)),
   });
-  expect(
-    await httpv.query("https://example.test/r", { method: "__proto__" }),
-  ).toEqual(v1);
+  const query = (method: string) =>
+    httpv.query("https://example.test/r", { method });
+  expect(await query("get")).toEqual(v1);
+  expect(await query("PATCH")).toEqual(v3);
+  await expect(query("patch")).rejects.toMatchObject({
+    reason: "missing-certificate",
+  });
+  // A method name Object.prototype also has is still a plain key.
+  expect(await query("__proto__")).toEqual(v1);
 });
 
 test("a caller's signal cancels discovery without removing the timeout", async () => {

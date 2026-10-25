@@ -268,10 +268,6 @@ Template for a future registration:
   Resource Identifier (URI): Generic Syntax", STD 66, RFC 3986, January 2005.
 - **[RFC6761]** Cheshire, S. and M. Krochmal, "Special-Use Domain Names",
   RFC 6761, February 2013.
-- **[RFC6838]** Freed, N., Klensin, J., and T. Hansen, "Media Type
-  Specifications and Registration Procedures", BCP 13, RFC 6838, January 2013.
-- **[RFC6839]** Hansen, T. and A. Melnikov, "Additional Media Type Structured
-  Syntax Suffixes", RFC 6839, January 2013.
 - **[RFC7493]** Bray, T., Ed., "The I-JSON Message Format", RFC 7493,
   March 2015.
 - **[RFC8174]** Leiba, B., "Ambiguity of Uppercase vs Lowercase in RFC 2119 Key
@@ -292,6 +288,10 @@ Template for a future registration:
 - **[GROTH16]** Groth, J., "On the Size of Pairing-Based Non-interactive
   Arguments", EUROCRYPT 2016.
 - **[LEAN]** "Lean 4", <https://lean-lang.org/>.
+- **[RFC6838]** Freed, N., Klensin, J., and T. Hansen, "Media Type
+  Specifications and Registration Procedures", BCP 13, RFC 6838, January 2013.
+- **[RFC6839]** Hansen, T. and A. Melnikov, "Additional Media Type Structured
+  Syntax Suffixes", RFC 6839, January 2013.
 - **[RFC9205]** Nottingham, M., "Building Protocols with HTTP", BCP 56,
   RFC 9205, June 2022.
 
