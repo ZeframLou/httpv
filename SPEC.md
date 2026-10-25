@@ -280,8 +280,8 @@ Template for a future registration:
   "HTTP Caching", STD 98, RFC 9111, June 2022.
 - **[URL]** WHATWG, "URL Standard", <https://url.spec.whatwg.org/>.
 - **[ZKLEAN]** "ZKLean certificate format", version `zklean/1`, commit
-  `f24cd28e17979fba30de27f1395af8b5f2e378cf`,
-  <https://github.com/ZeframLou/zklean/blob/f24cd28e17979fba30de27f1395af8b5f2e378cf/SPEC.md>.
+  `ca967d9a722cfdd7981037e9f27011c3c516fd95`,
+  <https://github.com/ZeframLou/zklean/blob/ca967d9a722cfdd7981037e9f27011c3c516fd95/SPEC.md>.
 
 ### 8.2. Informative references
 
