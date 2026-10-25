@@ -1,5 +1,4 @@
 import { createHash, generateKeyPairSync, sign, verify } from "node:crypto";
-import { standardAxioms } from "zklean";
 import type { Certificate, ProofBackend, Requirements } from "zklean";
 import {
   canonical,
@@ -7,7 +6,8 @@ import {
   encodeBase64,
   statement,
 } from "zklean/encoding";
-import { serve } from "../src/index.ts";
+// standardAxioms comes through httpv, as the README imports it.
+import { serve, standardAxioms } from "../src/index.ts";
 import type { Source } from "../src/index.ts";
 
 /** A stand-in identity: in real certificates these are Lean closure hashes. */

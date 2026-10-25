@@ -166,9 +166,9 @@ identities with your requirements. It never throws.
 `unknown` reasons:
 
 - discovery: `unavailable` (network error, timeout, server error, redirect, a
-  URL that is not HTTPS, or an invalid URL or method), `missing-certificate` (no certificate for this method, or a
-  server that does not support HTTPV), and `invalid-advertisement` (a
-  malformed discovery response);
+  URL that is not HTTPS, or an invalid URL or method), `missing-certificate`
+  (no certificate for this method, or a server that does not support HTTPV),
+  and `invalid-advertisement` (a malformed discovery response);
 - the certificate: `invalid-certificate`, `forbidden-axiom`, `axiom-mismatch`,
   and `verifier-unavailable`;
 - your configuration: `invalid-requirements`, including requirements with no
