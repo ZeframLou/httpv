@@ -27,11 +27,12 @@ export function inventory() {
   const backend: ProofBackend = {
     identity: `test:${publicKey.export({ type: "spki", format: "der" }).toString("hex")}`,
     async verify(certificate) {
+      // The 64-byte signature leads the proof's fixed 260 bytes.
       return verify(
         null,
         signed(certificate),
         publicKey,
-        decodeBase64(certificate.proof),
+        decodeBase64(certificate.proof).subarray(0, 64),
       );
     },
   };
@@ -48,7 +49,12 @@ export function inventory() {
     };
     return {
       ...unsigned,
-      proof: encodeBase64(sign(null, signed(unsigned), privateKey)),
+      proof: encodeBase64(
+        Buffer.concat([
+          sign(null, signed(unsigned), privateKey),
+          Buffer.alloc(260 - 64),
+        ]),
+      ),
     };
   };
   const safe = { "Inventory.reservation_safe": id("reservation_safe v1") };
