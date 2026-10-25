@@ -5,34 +5,36 @@ identities, axioms, and requirements.
 
 ## Install
 
+HTTPV is not yet published to npm. After publication:
+
 ```sh
-npm install httpv zklean
+npm install httpv
 ```
 
-You can also use `bun add httpv zklean`. HTTPV runs on [Bun](https://bun.sh/)
-1.4.4 or newer. For TypeScript checking, add `@types/bun` as a development
-dependency. Writing requirements also needs the
-[ZKLean CLI](https://github.com/ZeframLou/zklean).
+You can also use `bun add httpv`. Either installs its peer dependency `zklean`.
+HTTPV runs on [Bun](https://bun.sh/) 1.4.4 or newer. For TypeScript checking,
+add `@types/bun` as a development dependency.
 
-From a source checkout, `bun run example` serves three versions of a real
-certificate and blocks requests once the third breaks the client's
-requirement. Its committed certificates use an older format, so it currently
-blocks all three versions with `unknown (unavailable)`.
+Generating certificates and requirements needs the
+[ZKLean CLI](https://github.com/ZeframLou/zklean-dist), which is not yet
+published. It runs on Linux x86-64 and downloads about 2.9 GB of proving data.
+Checking certificates needs only the npm packages.
 
 ## Serve a certificate
 
-Generate each endpoint's certificate with `zklean prove` before deployment. A
-certificate is typically under 1 KB; its size grows with the number of claims
-and axioms, not with the size of the proofs. It holds:
+Generate each endpoint's certificate with `zklean prove` before deployment.
+Proving runs offline, can take hours, and needs over 12 GiB of memory. A certificate is typically under 1 KB; its size grows with the number
+of claims and axioms, not with the size of the proofs. It holds:
 
 - **claims:** the proved theorems, each with its identity;
 - **axioms:** the unproved assumptions the proofs use, with their identities;
-- **proof:** 260 bytes proving the claims under those axioms;
-- **source:** the URL where you publish the Lean export behind the
-  identities. `zklean prove` writes that export (`CERT.ndjson`) beside the
-  certificate; pass its URL with `--source`. To keep proofs private, publish
-  at that URL an export of a module that states the claims as axioms instead;
-  identities do not cover proofs, so they are the same.
+- **proof:** the cryptographic proof of the claims under those axioms;
+- **source:** the URL where you publish the **Lean export**, a file of the
+  compiled Lean declarations the identities are computed from. `zklean prove`
+  writes it (`CERT.ndjson`) beside the certificate; pass its URL with
+  `--source`. To keep proofs private, publish at that URL an export of a module
+  that states the claims as axioms instead; identities do not cover proofs, so
+  they are the same.
 
 Wrap your existing Fetch handler:
 
@@ -51,7 +53,7 @@ Bun.serve({
 });
 ```
 
-HTTPV answers discovery: `OPTIONS` requests that ask for
+HTTPV answers **discovery**: `OPTIONS` requests that ask for
 `application/httpv+json`. Every other request goes to your handler, including
 `OPTIONS` for paths without certificates and CORS preflight requests. Paths
 match exactly and the query is ignored. `serve` validates static certificates
@@ -67,8 +69,9 @@ every discovery request:
 "POST /reservations": () => Bun.file("./certs/reservations.json").json(),
 ```
 
-To let browsers on other origins read certificates, wrap the handler `serve`
-returns and add your CORS headers to its responses.
+To let browsers on other origins discover certificates, wrap the handler `serve`
+returns: answer preflights for `OPTIONS` with the `Cache-Control` request header
+allowed, and add `Access-Control-Allow-Origin` to discovery responses.
 
 ## Create a client
 
@@ -81,8 +84,9 @@ export const httpv = createHTTPV();
 ```
 
 The client verifies certificates with ZKLean's embedded WebAssembly verifier and
-the verifying key pinned in the SDK, never a key from the API being checked. It
-needs no native executable, prover, or Lean process.
+its **verifying key**, the public key that identifies ZKLean's checker program.
+The key is pinned in the SDK, never taken from the API being checked. The
+client needs no native executable, prover, or Lean process.
 
 To use another verifier, pass `createHTTPV({ backend })`. A backend has an
 `identity` string describing its trusted configuration and an async
@@ -100,8 +104,8 @@ Your requirements are a JSON file of claims and identities:
 }
 ```
 
-1. Get the API's Lean code and review the theorems your code relies on.
-2. Generate requirements from that code, naming those theorems:
+1. Get the API's Lean source and review the theorems your code relies on.
+2. Generate requirements from that source, naming those theorems:
 
    ```sh
    zklean requirements --project vendor/inventory --module Inventory \
@@ -113,22 +117,29 @@ Your requirements are a JSON file of claims and identities:
    with the same statement.
 3. Commit `requirements.json`.
 
-If you only have the API's certificate, save it with
-`httpv.query(url, { method })`, then fetch the export it names. ZKLean checks
-the export and fails unless every identity matches the certificate, and never
-runs what it downloads:
-
-```sh
-zklean fetch --certificate reservations.json --out vendor/inventory.ndjson
-zklean requirements --export vendor/inventory.ndjson \
-  --claims Inventory.reservation_safe --out requirements.json
-```
-
 Make sure the claims are about the function the endpoint implements; their
 identities then fix that function's definition. If your code needs a weaker
 property than the API certifies, prove it from the API's claims in your own
-Lean code and require the API's claims. Never copy requirements from the
-certificate you are about to check without reviewing them.
+Lean code and require the API's claims.
+
+If you have only the API's certificate, you can still confirm which
+declarations it names. Save the certificate and fetch its export; ZKLean fails
+unless every identity matches, and never runs what it downloads:
+
+```ts
+const certificate = await httpv.query(
+  "https://inventory.example.com/reservations",
+  { method: "POST" },
+);
+await Bun.write("reservations.json", JSON.stringify(certificate));
+```
+
+```sh
+zklean fetch --certificate reservations.json --out vendor/inventory.ndjson
+```
+
+The export holds compiled declarations, not readable Lean, so review the
+statements in the API's Lean source before requiring them.
 
 ## Check an endpoint
 
@@ -147,7 +158,7 @@ const inventory = {
 
 const result = await httpv.check(inventory);
 if (result.status !== "verified")
-  throw new Error(`inventory contract: ${result.status} (${result.reason})`);
+  throw new Error(`inventory requirements: ${result.status} (${result.reason})`);
 ```
 
 `check` fetches the endpoint's certificate, verifies it, and compares its claim
@@ -161,9 +172,10 @@ identities with your requirements. It never throws.
 
 `unknown` reasons:
 
-- discovery: `unavailable` (network, timeout or server error),
-  `missing-certificate` (no certificate for this method), and
-  `invalid-advertisement` (a malformed discovery response);
+- discovery: `unavailable` (network error, timeout, server error, or a URL that
+  is not HTTPS), `missing-certificate` (no certificate for this method, or a
+  server that does not support HTTPV), and `invalid-advertisement` (a
+  malformed discovery response);
 - the certificate: `invalid-certificate`, `forbidden-axiom`, `axiom-mismatch`,
   and `verifier-unavailable`;
 - your configuration: `invalid-requirements`, including requirements with no
@@ -181,7 +193,7 @@ certificates that use none. A certificate using an axiom you did not list is
 
 For lower-level control, `httpv.query(url, { method })` returns the endpoint's
 certificate, throwing a `DiscoveryError` if discovery fails, and
-`httpv.compare(certificate, requirement)` runs the rest of the check. Discovery
+`httpv.compare(certificate, inventory)` runs the rest of the check. Discovery
 gives up after `timeout` milliseconds, 10 s by default, even if you also pass a
 `signal`.
 
@@ -211,9 +223,9 @@ unless the latest result is `verified` and younger than `maxAge`, measured from
 when that check started.
 
 `onChange` is for notifications. It runs on the first result, when a verified
-result expires, and whenever the status, reason, or certified claims change. If
-it throws, monitoring continues, but the error is reported as uncaught, which
-ends a Bun process unless you handle `uncaughtException`.
+result expires, and whenever the status, reason, or certified claims or axioms
+change. If it throws, monitoring continues, but the error is reported as
+uncaught, which ends a Bun process unless you handle `uncaughtException`.
 
 | Setting    | Default              | Meaning                                        |
 | ---------- | -------------------- | ---------------------------------------------- |
@@ -230,4 +242,4 @@ result, and `stop()` ends polling and invalidates the result.
 
 HTTPS is required and redirects are rejected. For a server on this machine
 (`localhost` or a loopback address), add `allowInsecureHttp: true` to the
-dependency.
+endpoint description passed to `check` or `watch`.

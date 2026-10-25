@@ -53,7 +53,8 @@ and only when, they appear in all capitals, as shown here.
 
 This document places requirements on three roles:
 
-- a **server**: an origin server that publishes certificates (Section 4.2);
+- a **server**: an origin server that publishes certificates (Sections 4.1
+  and 4.2);
 - a **client**: software that discovers and checks certificates (Sections 4.1,
   4.3 and 5);
 - a **monitor**: a client component that repeats checks and gates dependent
@@ -62,8 +63,8 @@ This document places requirements on three roles:
 ### 1.3. Terminology
 
 This document uses the terms "resource", "target resource", "target URI",
-"method", "origin server", "user agent", and "representation" as defined in
-HTTP Semantics [RFC9110], and "JSON text" as defined in [RFC8259].
+"method", "origin server", and "user agent" as defined in HTTP Semantics
+[RFC9110], and "JSON text" as defined in [RFC8259].
 
 - **Endpoint:** one method of one target resource, such as `POST /units`.
 - **Operation:** the Lean function that defines an endpoint's behavior.
@@ -107,6 +108,12 @@ HTTP Semantics [RFC9110], and "JSON text" as defined in [RFC8259].
 3. It sends dependent requests only while the latest check succeeded and is
    recent enough (Section 6).
 
+Discovery uses `OPTIONS` on the target resource itself because a certificate
+describes that resource and needs no URI of its own. [RFC9205] notes the costs
+of this choice: `OPTIONS` responses are not cacheable, intermediaries often
+answer `OPTIONS` themselves, and browsers send a preflight first. Sections 4.4,
+7.2 and 7.9 address each.
+
 ## 3. Certificates and requirements
 
 ### 3.1. Certificates
@@ -141,17 +148,18 @@ Requirements are a ZKLean requirements object [ZKLEAN]:
 }
 ```
 
-`claims` MUST contain at least one entry. A client MUST treat requirements
-that it cannot read, or that contain no claims, as unusable (Section 5.2):
-requiring nothing would accept every certificate that verifies. Section 7.3
-explains how to choose requirements.
+A client MUST treat requirements as unusable (Section 5.2) unless they are a
+JSON object with exactly two members: `format`, whose value is
+`"zklean/requirements/1"`, and `claims`, a non-empty object mapping non-empty
+names to identities. Requiring nothing would accept every certificate that
+verifies. Section 7.3 explains how to choose requirements.
 
 ## 4. Discovery
 
 ### 4.1. Request
 
 A client discovers an endpoint's certificate by sending `OPTIONS` to the
-target resource in origin form [RFC9112]:
+target resource:
 
 ```http
 OPTIONS /units HTTP/1.1
@@ -162,31 +170,33 @@ Cache-Control: no-cache
 
 The client MUST use the `https` scheme. It MAY use `http` for a host that is a
 loopback address or a `localhost` name, when the user has explicitly allowed
-it. The target URI MUST NOT contain userinfo or a fragment [RFC3986]. The
+it; names under `localhost` resolve to loopback addresses [RFC6761, Section
+6.3]. The target URI MUST NOT contain userinfo or a fragment [RFC3986]. The
 client SHOULD send `Cache-Control: no-cache` [RFC9111] and MUST NOT follow
 redirects.
 
 An `OPTIONS` request is a discovery request only if all of the following hold.
 A server MUST process any other `OPTIONS` request as an ordinary request:
 
-- the request target is in origin form; an asterisk-form request (`OPTIONS *`)
-  is never a discovery request;
+- the request target is not `*` [RFC9110, Section 9.3.7];
 - the `Accept` header field contains the media range `application/httpv+json`
-  itself, not only a wildcard such as `*/*`, with no `q` parameter or with a
-  quality value [RFC9110, Section 12.4.2] greater than zero; a range whose
-  quality value is not valid does not count;
+  itself, not only a wildcard such as `*/*`, with no parameter other than an
+  optional weight [RFC9110, Section 12.4.2] whose value is greater than zero; a
+  range with any other parameter or an invalid weight does not count;
 - the request has no `Access-Control-Request-Method` header field, which would
   make it a CORS preflight request [FETCH].
 
 ### 4.2. Response
 
-The server selects the certificates by the target URI's path, compared exactly;
-the query is not used. If the path has no certificates, the server MUST process
-the request as an ordinary `OPTIONS` request.
+The server selects the certificates by the path of the target URI, as parsed
+by the URL Standard [URL], which removes dot segments; the query is not used.
+It MUST select the resource its ordinary request routing would select for the
+same path. If the path has no certificates, the server MUST process the
+request as an ordinary `OPTIONS` request.
 
-Otherwise the server responds with `200 (OK)`, `Content-Type:
-application/httpv+json`, and a JSON text [RFC8259] in UTF-8 that is an
-I-JSON message [RFC7493]:
+Otherwise the server MUST respond with `200 (OK)` and `Content-Type:
+application/httpv+json`, with content that is a JSON text [RFC8259] in UTF-8
+and an I-JSON message [RFC7493], and SHOULD keep that content under 64 KiB:
 
 ```json
 {
@@ -202,8 +212,9 @@ I-JSON message [RFC7493]:
 | `format`       | The string `"httpv/1"`.                                            |
 | `certificates` | An object mapping each method name to that endpoint's certificate. |
 
-The object MUST contain exactly these members; a later version that adds
-members uses a different `format`.
+The object MUST contain exactly these members. This document defines only
+version 1; a later version will use a different media type, so that clients
+can ask for the versions they support.
 
 The keys of `certificates` are method tokens [RFC9110, Section 9.1] and are
 compared case-sensitively. Fetch [FETCH] normalizes the methods `DELETE`,
@@ -211,12 +222,13 @@ compared case-sensitively. Fetch [FETCH] normalizes the methods `DELETE`,
 write those six in uppercase, and a client MUST normalize them the same way
 before looking a method up. A certificate for `GET` does not cover `HEAD`.
 
-The server SHOULD send `Cache-Control: no-store`, and MAY send `Allow`
-[RFC9110, Section 10.2.1].
+The server SHOULD send `Cache-Control: no-store`. It MAY send `Allow`
+[RFC9110, Section 10.2.1]; a server that answers discovery without consulting
+the application may not know the resource's methods.
 
-If the server cannot produce a certificate it publishes for the path, it
-responds with `503 (Service Unavailable)`, and the response MUST NOT be labeled
-`application/httpv+json`. A server that builds the whole response at once makes
+If the server cannot produce a certificate it publishes for the path, it MUST
+respond with a `5xx` status such as `503 (Service Unavailable)`, and the
+response MUST NOT be labeled `application/httpv+json`. A server that builds the whole response at once makes
 one endpoint's failure affect its siblings; this document does not define a
 partial response.
 
@@ -228,19 +240,20 @@ operation covers the whole parameter domain.
 
 ### 4.3. Client processing
 
-The client MUST limit the size of the response content it reads and SHOULD
-reject content larger than 64 KiB. It classifies the response as follows. Every
-outcome except the last makes the check result `unknown` (Section 5.2).
+The client MUST limit the size of the response content it reads, after
+removing content codings, and SHOULD reject content larger than 64 KiB. It
+classifies the response by the first matching row below. Every outcome except
+the last makes the check result `unknown` (Section 5.2).
 
 | Response                                                                                             | Outcome          |
 | ---------------------------------------------------------------------------------------------------- | ---------------- |
 | A network error, a redirect, a timeout, or a failure while reading the content                       | Unavailable      |
 | A `2xx` status other than `200` labeled `application/httpv+json`                                     | Invalid          |
-| `404`, `405`, `406` or `501`; or a `2xx` response not labeled `application/httpv+json`                | No certificate   |
-| Any other `4xx` or `5xx` status                                                                      | Unavailable      |
+| `404 (Not Found)`, `405 (Method Not Allowed)`, `406 (Not Acceptable)` or `501 (Not Implemented)`; or a `2xx` response not labeled `application/httpv+json` | No certificate |
+| Any other status other than `200 (OK)`                                                               | Unavailable      |
 | Content over the size limit, not valid UTF-8 JSON, or not an object with exactly the members above   | Invalid          |
 | A valid object without the requested method                                                          | No certificate   |
-| A valid object whose certificate for that method is not valid [ZKLEAN]                               | Invalid          |
+| A valid object whose certificate for that method is not well formed [ZKLEAN]                         | Invalid          |
 | Otherwise                                                                                            | The certificate  |
 
 A client MUST validate the certificate for the requested method and SHOULD
@@ -297,10 +310,12 @@ A monitor repeats the check for an endpoint. It:
 
 - MUST bound each check, including verification, by a timeout, and MUST
   discard a result that arrives after the timeout expires;
-- MUST measure a result's age from the time it sent the discovery request that
-  produced it;
-- MUST stop treating a `verified` result as current once its age exceeds a
-  configured maximum, even while a later check is still running;
+- MUST measure a result's age from a time no later than when it sent the
+  discovery request that produced it;
+- MUST stop treating a `verified` result as current once its age reaches a
+  configured maximum, even while a later check is still running, and SHOULD
+  set that maximum to at least the check interval plus the timeout, so that
+  requests are not blocked between two successful checks;
 - MUST let the application test, where a request depends on the endpoint,
   that the latest result is `verified` and current, and MUST fail that test
   until a check has completed with `verified`, after the monitor has stopped,
@@ -363,10 +378,10 @@ deployment, or an intermediary that caches `OPTIONS` responses against
 [RFC9110], as long as its claims still match. HTTPV detects changes in what is
 certified, not when a certification was made.
 
-Groth16 proofs can be re-randomized into other valid proofs of the same
-statement, so certificate bytes are not a stable identifier. Clients MUST NOT
-identify, pin, or deduplicate certificates by their bytes; the statement
-identity is stable.
+Groth16 [GROTH16] proofs can be re-randomized into other valid proofs of the
+same statement, so certificate bytes are not a stable identifier. Clients MUST
+NOT treat a change in certificate bytes as a change in what is certified; the
+statement identity identifies that.
 
 ### 7.6. Source pointers
 
@@ -375,7 +390,9 @@ it only to obtain Lean declarations, MUST discard any declaration whose
 recomputed identity differs from the certified one, and MUST NOT execute
 content fetched from it. A client MUST NOT dereference a `source` that is not
 an `https` URL when the certificate came over the network, so that a
-certificate cannot direct it to local files.
+certificate cannot direct it to local files. It SHOULD NOT dereference a
+`source` whose host resolves to a loopback, link-local, or private address
+unless configured to, and MUST bound the size of what it fetches.
 
 ### 7.7. Resource exhaustion
 
@@ -397,8 +414,10 @@ gap.
 `OPTIONS` is not a CORS-safelisted method, so a user agent sends a CORS
 preflight request [FETCH] before a cross-origin discovery request. Section 4.1
 keeps preflight requests away from discovery, so the application answers them
-with its usual CORS policy. To let browsers on other origins read a discovery
-response, the server also has to add CORS response headers to it.
+with its usual CORS policy. To let browsers on another origin discover
+certificates, the preflight response MUST allow the method `OPTIONS` and the
+request header `Cache-Control` if the client sends it, and the discovery
+response MUST carry `Access-Control-Allow-Origin` for that origin.
 
 ## 8. Privacy considerations
 
@@ -411,8 +430,10 @@ accepts.
 
 ## 9. IANA considerations
 
-This document registers the following media type in the "Media Types" registry
-[RFC6838]:
+This draft requests no registration yet. A registration in the standards tree
+requires the IETF as change controller [RFC6838, Section 3.1]; until then,
+implementations use the media type below on the understanding that it may
+change. The template for a future registration is:
 
 - **Type name:** application
 - **Subtype name:** httpv+json
@@ -424,7 +445,7 @@ This document registers the following media type in the "Media Types" registry
   with a verifying key it chose; the content cannot select that key. Its
   `source` members are untrusted URLs. See Section 7 of this document.
 - **Interoperability considerations:** the `format` member identifies the
-  version; recipients reject unknown versions.
+  version; recipients MUST reject unknown versions.
 - **Published specification:** this document.
 - **Applications that use this media type:** HTTPV clients and servers.
 - **Fragment identifier considerations:** as specified for `+json` in
@@ -434,12 +455,12 @@ This document registers the following media type in the "Media Types" registry
   - Magic number(s): N/A
   - File extension(s): N/A
   - Macintosh file type code(s): N/A
-- **Person and email address to contact for further information:** the author
-  (Appendix B).
+- **Person and email address to contact for further information:** to be
+  assigned on registration.
 - **Intended usage:** COMMON
 - **Restrictions on usage:** none
 - **Author:** see Appendix B.
-- **Change controller:** the author.
+- **Change controller:** IETF.
 
 ## 10. References
 
@@ -450,6 +471,8 @@ This document registers the following media type in the "Media Types" registry
   Requirement Levels", BCP 14, RFC 2119, March 1997.
 - **[RFC3986]** Berners-Lee, T., Fielding, R., and L. Masinter, "Uniform
   Resource Identifier (URI): Generic Syntax", STD 66, RFC 3986, January 2005.
+- **[RFC6761]** Cheshire, S. and M. Krochmal, "Special-Use Domain Names",
+  RFC 6761, February 2013.
 - **[RFC6838]** Freed, N., Klensin, J., and T. Hansen, "Media Type
   Specifications and Registration Procedures", BCP 13, RFC 6838, January 2013.
 - **[RFC6839]** Hansen, T. and A. Melnikov, "Additional Media Type Structured
@@ -464,15 +487,17 @@ This document registers the following media type in the "Media Types" registry
   "HTTP Semantics", STD 97, RFC 9110, June 2022.
 - **[RFC9111]** Fielding, R., Ed., Nottingham, M., Ed., and J. Reschke, Ed.,
   "HTTP Caching", STD 98, RFC 9111, June 2022.
-- **[RFC9112]** Fielding, R., Ed., Nottingham, M., Ed., and J. Reschke, Ed.,
-  "HTTP/1.1", STD 99, RFC 9112, June 2022.
-- **[ZKLEAN]** "ZKLean certificate format", version `zklean/1`, commit
-  `cf36a1576fbb3c01dbf570db94ac548f0555abc7`,
-  <https://github.com/ZeframLou/zklean/blob/cf36a1576fbb3c01dbf570db94ac548f0555abc7/SPEC.md>.
+- **[URL]** WHATWG, "URL Standard", <https://url.spec.whatwg.org/>.
+- **[ZKLEAN]** "ZKLean certificate format", version `zklean/1`,
+  <https://github.com/ZeframLou/zklean-dist/blob/main/SPEC.md>.
 
 ### 10.2. Informative references
 
+- **[GROTH16]** Groth, J., "On the Size of Pairing-Based Non-interactive
+  Arguments", EUROCRYPT 2016.
 - **[LEAN]** "Lean 4", <https://lean-lang.org/>.
+- **[RFC9205]** Nottingham, M., "Building Protocols with HTTP", BCP 56,
+  RFC 9205, June 2022.
 
 ## Appendix A. Example
 

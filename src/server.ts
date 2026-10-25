@@ -2,25 +2,22 @@ import { parseCertificate } from "zklean";
 import { MEDIA_TYPE, encodeDiscovery, methodName } from "./protocol.ts";
 import type { Certificate, Handler, ServeOptions, Source } from "./types.ts";
 
-/** The HTTPV media type is listed by name, not by a wildcard, with a valid
- * quality value above zero (RFC 9110, Section 12.4.2). */
+/** The HTTPV media type is listed by name, not by a wildcard, with no
+ * parameter but an optional weight above zero (RFC 9110, Section 12.4.2). */
 function acceptsDiscovery(accept: string | null): boolean {
   return (accept ?? "").split(",").some((range) => {
     const [type, ...parameters] = range
-      .toLowerCase()
       .split(";")
-      .map((part) => part.replace(/\s/g, ""));
-    if (type !== MEDIA_TYPE) return false;
-    const q = parameters.find((parameter) => parameter.startsWith("q="));
-    if (q === undefined) return true;
-    const value = q.slice(2);
-    return /^(0(\.\d{0,3})?|1(\.0{0,3})?)$/.test(value) && Number(value) > 0;
+      .map((part) => part.trim().toLowerCase());
+    if (type !== MEDIA_TYPE || parameters.length > 1) return false;
+    const weight = parameters[0]?.match(/^q=(0(\.\d{0,3})?|1(\.0{0,3})?)$/);
+    return parameters.length === 0 || (!!weight && Number(weight[1]) > 0);
   });
 }
 
 /** Answer HTTPV discovery and pass every other request to `fetch`, including
- * OPTIONS for a resource without certificates. Paths match exactly and the
- * query is ignored. Static certificates are validated at startup; providers
+ * OPTIONS for a resource without certificates. Paths match the URL parser's
+ * normalized path exactly, and the query is ignored. Static certificates are validated at startup; providers
  * run on every discovery request. */
 export function serve({ routes, fetch }: ServeOptions): { fetch: Handler } {
   const paths = new Map<string, Map<string, Source>>();
@@ -30,7 +27,7 @@ export function serve({ routes, fetch }: ServeOptions): { fetch: Handler } {
       !method ||
       !path?.startsWith("/") ||
       extra !== undefined ||
-      /[?#]/.test(path)
+      /[?#*]/.test(path)
     )
       throw new Error(`invalid route: ${route}`);
     const methods = paths.get(path) ?? new Map<string, Source>();

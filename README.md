@@ -1,10 +1,11 @@
 # HTTPV
 
-HTTPV (HTTP Verified) lets an API publish a machine-checkable proof of how each
-endpoint behaves, and lets clients confirm that proof before relying on the
-endpoint. When the API changes behavior your code depends on, your client
-finds out at its next check and can stop sending dependent requests, instead of
-failing in production.
+HTTPV (HTTP Verified) is a protocol and a TypeScript library for Bun. It lets
+an API publish a certificate proving properties of a Lean model of each
+endpoint, and lets clients check that certificate before relying on the
+endpoint. When the API publishes a changed model that your code depends on,
+your client finds out at its next check and can stop sending dependent
+requests, instead of failing in production.
 
 ## Why
 
@@ -14,16 +15,18 @@ and your checkout is built on that. Then the service starts accepting
 backorders. Your code is unchanged and every request still succeeds, but you
 are now selling stock that does not exist.
 
-With HTTPV, the service states its guarantee, "a reservation never exceeds
-available stock", as a mathematical statement about the endpoint's code,
-proves it, and publishes the proof next to the endpoint. Your client lists the
-guarantees it relies on and rechecks the published proof on a schedule:
+With HTTPV, the service models the endpoint as a function, states its
+guarantee ("a reservation never exceeds available stock") as a mathematical
+statement about that function, proves it, and publishes the certificate next
+to the endpoint. Your client lists the guarantees it relies on and rechecks the
+certificate on a schedule:
 
-- If the service adds guarantees without changing the code your guarantees are
+- If the service adds guarantees without changing the function yours are
   about, the check passes.
-- If it drops or changes a guarantee you rely on, or changes that code at all,
-  the check fails, so your code can block dependent requests, switch provider,
-  or alert someone. Even a harmless refactor fails until you review it.
+- If it drops or changes a guarantee you rely on, or changes that function at
+  all, the check fails, so your code can block dependent requests, switch
+  provider, or alert someone. Even a harmless refactor fails until you review
+  it.
 
 Ordinary requests and responses are unchanged.
 
@@ -32,12 +35,13 @@ Ordinary requests and responses are unchanged.
 - **[Lean](https://lean-lang.org/)** is a programming language and proof
   assistant. The API author writes the endpoint's behavior as a Lean function
   and proves **theorems** about it, such as "a reservation never exceeds
-  available stock". Lean checks each proof mechanically.
-- **[ZKLean](https://github.com/ZeframLou/zklean)** runs Lean's proof
-  checker inside a cryptographic proving system. The result is a **certificate**
-  that anyone can check quickly without seeing or re-running the Lean proofs. It
-  lists the proved theorems, called **claims**, and a 260-byte
-  **cryptographic proof** that Lean's checker accepted them.
+  available stock". Proofs are checked mechanically.
+- **[ZKLean](https://github.com/ZeframLou/zklean-dist)** checks those proofs
+  with an independent Lean proof checker inside a cryptographic proving system.
+  The result is a **certificate** that anyone can check quickly without seeing
+  or re-running the Lean proofs. It lists the proved theorems, called
+  **claims**, and a short **cryptographic proof** that the checker accepted
+  them.
 - Each claim has an **identity**: a hash of its statement and of everything the
   statement refers to, including the endpoint's function. If the API changes
   that function or the theorem, the identity changes.
@@ -54,10 +58,12 @@ Ordinary requests and responses are unchanged.
  Lean function + theorems       answers OPTIONS /reservations    1. verify the certificate
         │ zklean prove          with the certificate        ──▶  2. compare its claims with
         ▼                       for POST                            your requirements
-   certificate (< 1 KB)  ──▶                                     3. call, or block
+    certificate          ──▶                                     3. call, or block
 ```
 
-Following ZKLean's [benchmarks](https://github.com/ZeframLou/zklean/blob/cf36a1576fbb3c01dbf570db94ac548f0555abc7/docs/BENCHMARKS.md),
+Proving happens once per release, offline, and can take hours.
+Checking is cheap: in ZKLean's
+[benchmarks](https://github.com/ZeframLou/zklean-dist/blob/main/docs/BENCHMARKS.md),
 a one-claim certificate is about 600 bytes and verifies in about a third of a
 second, with no Lean installation on the client.
 
@@ -74,10 +80,11 @@ change between two checks.
 Not yet on npm. After publication:
 
 ```sh
-npm install httpv zklean
+npm install httpv
 ```
 
-HTTPV runs on [Bun](https://bun.sh/) 1.4.4 or newer.
+This also installs its peer dependency `zklean`. HTTPV runs on
+[Bun](https://bun.sh/) 1.4.4 or newer.
 
 **Server:** serve each endpoint's certificate alongside your existing handler.
 
@@ -92,21 +99,19 @@ Bun.serve({
 });
 ```
 
-**Client:** name the endpoint and your requirements, then gate each dependent
-request on the latest check.
+**Client:** describe the endpoint and your requirements, then gate each
+dependent request on the latest check.
 
 ```ts
 import { createHTTPV } from "httpv";
+import { standardAxioms } from "zklean";
 
 const monitor = createHTTPV().watch(
   {
     url: "https://inventory.example.com/reservations",
     method: "POST",
-    // Your requirements, generated by `zklean requirements`. Relative paths
-    // resolve from the working directory.
-    requirements: "./requirements.json",
-    // The axioms you accept. `{}` accepts none.
-    axioms: {},
+    requirements: "./requirements.json", // generated by `zklean requirements`
+    axioms: standardAxioms, // Lean's propext, Quot.sound and Classical.choice
   },
   { interval: 60_000 },
 );
@@ -116,8 +121,10 @@ monitor.requireVerified(); // throws unless the latest check passed
 await fetch("https://inventory.example.com/reservations", { method: "POST" });
 ```
 
-[`examples/upgrades.ts`](examples/upgrades.ts) shows a real upgrade: version 2
-adds a guarantee and passes; version 3 accepts backorders and is blocked.
+[`examples/upgrades.ts`](examples/upgrades.ts) will show a real upgrade:
+version 2 adds a guarantee and passes; version 3 accepts backorders and is
+blocked. Its certificates are being re-proved; until then it blocks all three
+versions.
 
 The [usage guide](docs/USAGE.md) covers writing requirements, accepting
 axioms, and monitoring. The [protocol specification](SPEC.md) defines the wire

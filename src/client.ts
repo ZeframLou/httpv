@@ -222,6 +222,8 @@ export function createHTTPV(options: ClientOptions = {}) {
       const previous = running;
       const work = (async () => {
         await previous;
+        // Abandoned while waiting: never start it.
+        if (deadline.aborted) return;
         return check(dependency, { signal: deadline, timeout });
       })();
       running = work;

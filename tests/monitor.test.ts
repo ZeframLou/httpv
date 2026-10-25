@@ -232,10 +232,17 @@ test("a check abandoned at its timeout finishes before the next one starts", asy
     // A different certificate, so the verifier's cache cannot merge the work.
     serveVersion(1);
     expect((await monitor.refresh()).reason).toBe("timeout");
+    expect((await monitor.refresh()).reason).toBe("timeout");
     expect(calls).toBe(1);
     release();
     await Bun.sleep(20);
+    // The checks abandoned while waiting never started.
+    expect(calls).toBe(1);
     expect((await monitor.refresh()).status).toBe("verified");
+    expect(calls).toBe(2);
+    monitor.stop();
+    expect((await monitor.refresh()).reason).toBe("stopped");
+    expect(calls).toBe(2);
   } finally {
     release();
     monitor.stop();

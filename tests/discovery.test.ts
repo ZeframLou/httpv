@@ -75,7 +75,13 @@ test("providers run per request", async () => {
 
 test("routes are validated at startup", () => {
   const fetch = () => new Response();
-  for (const route of ["POST", "POST reservations", "POST /a?b", "BAD() /a"])
+  for (const route of [
+    "POST",
+    "POST reservations",
+    "POST /a?b",
+    "POST /*",
+    "BAD() /a",
+  ])
     expect(() => serve({ routes: { [route]: v1 }, fetch })).toThrow();
   expect(() => serve({ routes: { "POST /a": malformed }, fetch })).toThrow();
   expect(() =>
@@ -175,6 +181,8 @@ test("only an explicit media range with a valid non-zero quality is discovery", 
     `${MEDIA_TYPE};q=abc`,
     `${MEDIA_TYPE};q=2`,
     `${MEDIA_TYPE};q=0.000`,
+    `${MEDIA_TYPE}; q = 0.5`,
+    `${MEDIA_TYPE};v=1`,
   ])
     expect(await media(accept)).not.toBe(MEDIA_TYPE);
 });
