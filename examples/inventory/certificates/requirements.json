@@ -1,9 +1,6 @@
 {
   "claims": {
-    "UnitClient.nonempty": "1d8ab49e6addce9d3f45da48d25915f9bf406f673ac571f062fc176b1bc3591d"
-  },
-  "definitions": {
-    "UnitInventory.POST_units": "42ba35c2e182daeb778d0f331406ef2028cc9cb94e6a4283ea2c99c2aa16d8c0"
+    "UnitInventory.conserves": "741f4995d8c8126e06b84a2b85fcce48ccee724a297032da430eefe308968225"
   },
   "format": "zklean/requirements/1"
 }
