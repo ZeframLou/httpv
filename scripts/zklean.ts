@@ -8,6 +8,8 @@ export async function runZKLean(args: string[]): Promise<string> {
     stderr: "inherit",
   });
   const output = await new Response(child.stdout).text();
-  if ((await child.exited) !== 0) throw new Error(`ZKLean ${args[0]} failed`);
+  // ZKLean prints why a command failed on stdout, so pass that on.
+  if ((await child.exited) !== 0)
+    throw new Error(`ZKLean ${args[0]} failed\n${output}`);
   return output;
 }

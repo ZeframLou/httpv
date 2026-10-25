@@ -233,7 +233,9 @@ export function createHTTPV(options: ClientOptions = {}) {
       return [{ ...result, checkedAt }, started];
     };
 
+    // Stopping is the caller's own act and is never notified.
     const notify = (result: Result): void => {
+      if (stopper.signal.aborted) return;
       const { status, reason, statementId } = result;
       const key = JSON.stringify([status, reason, statementId]);
       if (key === notified) return;

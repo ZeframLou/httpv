@@ -172,8 +172,6 @@ identities with your requirements. It never throws.
   claims;
 - a monitor: `timeout`, `expired`, and `stopped`.
 
-The server may certify extra claims.
-
 `axioms` lists the axioms you accept, by name and identity. `{}` accepts only
 certificates that use none. A certificate using an axiom you did not list is
 `unknown / forbidden-axiom`, and one whose axiom has a different identity is

@@ -19,8 +19,9 @@ bun install --frozen-lockfile
 bun run check
 ```
 
-The published package peer-depends on the npm `zklean@0.1.0` SDK instead, whose
-embedded verifier means the tests and the example need only Bun.
+ZKLean's SDK embeds its verifier, so the tests and the example need only Bun.
+The published package peer-depends on the npm `zklean@0.1.0` SDK instead of
+the Git dependency.
 
 ## Current state
 

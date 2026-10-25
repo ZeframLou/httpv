@@ -321,3 +321,22 @@ test("expiry is notified even when a timer fires early", async () => {
     expect(reasons.at(-1)).toBe("expired");
   }
 });
+
+test("stopping from onChange is not itself notified", async () => {
+  const { backend, app, dependency } = setup();
+  using _ = app;
+  const reasons: string[] = [];
+  const monitor = client(slow(backend, () => Bun.sleep(100))).watch(
+    dependency,
+    {
+      interval: 60_000,
+      maxAge: 50,
+      onChange: (result) => {
+        reasons.push(result.reason);
+        monitor.stop();
+      },
+    },
+  );
+  expect((await monitor.refresh()).reason).toBe("stopped");
+  expect(reasons).toEqual(["expired"]);
+});

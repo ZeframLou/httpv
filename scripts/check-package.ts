@@ -48,7 +48,12 @@ try {
     ZKLEAN_NATIVE: "/no-native-verifier",
     ELAN_HOME: "/no-lean",
   });
-  if (!output.includes("V3 accepts backorders: incompatible"))
+  const expected = [
+    'V1: verified (exact-match) -> {"remaining":2}',
+    'V2 adds a guarantee: verified (exact-match) -> {"remaining":1}',
+    "V3 accepts backorders: incompatible (requirements-not-met) -> request blocked",
+  ];
+  if (output.trim() !== expected.join("\n"))
     throw new Error(`unexpected example output:\n${output}`);
   console.log(output);
 } finally {

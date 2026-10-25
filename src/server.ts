@@ -32,7 +32,8 @@ export function serve({ routes, fetch }: ServeOptions): { fetch: Handler } {
     // A path the URL parser would rewrite could never match a request.
     if (
       extra !== undefined ||
-      path.includes("*") ||
+      // A runtime may present `OPTIONS *` as the path `/*` (SPEC 4.1).
+      path === "/*" ||
       new URL(path, "http://host").pathname !== path
     )
       throw new Error(`invalid route: ${route}`);
