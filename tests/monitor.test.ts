@@ -300,3 +300,24 @@ test("stopping from onChange makes the pending refresh report stopped", async ()
   });
   expect((await monitor.refresh()).reason).toBe("stopped");
 });
+
+test("expiry is notified even when a timer fires early", async () => {
+  const { backend, app, dependency } = setup();
+  using _ = app;
+  // Fractional deadlines make timers fire a little early for some ages, so
+  // try many at once.
+  const runs = Array.from({ length: 40 }, (_, index) => {
+    const reasons: string[] = [];
+    const monitor = client(backend).watch(dependency, {
+      interval: 60_000,
+      maxAge: 20 + index,
+      onChange: (result) => reasons.push(result.reason),
+    });
+    return { reasons, monitor };
+  });
+  await Bun.sleep(250);
+  for (const { reasons, monitor } of runs) {
+    monitor.stop();
+    expect(reasons.at(-1)).toBe("expired");
+  }
+});

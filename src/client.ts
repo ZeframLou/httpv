@@ -259,6 +259,14 @@ export function createHTTPV(options: ClientOptions = {}) {
       return latest && { ...latest };
     };
 
+    // Notify expiry once maxAge has passed. Timers round and can fire a
+    // little early, so re-arm until the deadline really has passed.
+    const expire = (): void => {
+      const left = maxAge - age();
+      if (left > 0) expiry = setTimeout(expire, Math.ceil(left));
+      else notify(current()!);
+    };
+
     const refresh = (): Promise<Result> => {
       if (stopper.signal.aborted) return Promise.resolve(stopped());
       inflight ??= cycle().then(([result, started]) => {
@@ -271,11 +279,7 @@ export function createHTTPV(options: ClientOptions = {}) {
         // Checks start at a fixed rate, so with the default maxAge a verified
         // result stays current until the next one arrives.
         timer = setTimeout(refresh, Math.max(0, interval - age()));
-        if (latest.status === "verified")
-          expiry = setTimeout(
-            () => notify(current()!),
-            Math.max(0, maxAge - age()),
-          );
+        if (latest.status === "verified") expire();
         // A result that took longer than maxAge is already expired, and
         // onChange may stop the monitor.
         notify(current()!);
