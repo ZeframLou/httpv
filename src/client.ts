@@ -114,7 +114,7 @@ export function createHTTPV(options: ClientOptions = {}) {
       .trim()
       .toLowerCase();
     if (response.status !== 200 || type !== MEDIA_TYPE) {
-      await response.body?.cancel();
+      await response.body?.cancel().catch(() => {});
       // The classification table in SPEC 4.3.
       const reason =
         type === MEDIA_TYPE && response.ok
@@ -188,7 +188,11 @@ export function createHTTPV(options: ClientOptions = {}) {
   function watch(dependency: Dependency, settings: WatchOptions): Monitor {
     dependency = structuredClone(dependency);
     const { interval, timeout = 10_000, onChange } = settings;
-    const maxAge = settings.maxAge ?? Math.min(interval + timeout, 0x7fffffff);
+    // Checks run one at a time, so the next starts at most max(interval,
+    // timeout) after this one and lands at most timeout later.
+    const maxAge =
+      settings.maxAge ??
+      Math.min(Math.max(interval, timeout) + timeout, 0x7fffffff);
     for (const [name, value] of Object.entries({ interval, timeout, maxAge }))
       if (!Number.isInteger(value) || value < 1 || value > 0x7fffffff)
         throw new RangeError(`invalid ${name}`);
@@ -278,8 +282,7 @@ export function createHTTPV(options: ClientOptions = {}) {
         latestStart = started;
         clearTimeout(timer);
         clearTimeout(expiry);
-        // Checks start at a fixed rate, so with the default maxAge a verified
-        // result stays current until the next one arrives.
+        // Checks start at a fixed rate, or straight after one that overran.
         timer = setTimeout(refresh, Math.max(0, interval - age()));
         if (latest.status === "verified") expire();
         // A result that took longer than maxAge is already expired, and

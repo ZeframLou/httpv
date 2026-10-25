@@ -215,13 +215,16 @@ uncaught, which ends a Bun process unless you handle `uncaughtException`.
 
 | Setting    | Default              | Meaning                                        |
 | ---------- | -------------------- | ---------------------------------------------- |
-| `interval` | required             | Delay between checks, in milliseconds.         |
-| `timeout`  | `10_000`             | Limit on one check, including verification.    |
-| `maxAge`   | `interval + timeout` | Age at which a verified result stops counting. |
-| `signal`   | none                 | Stops the monitor when aborted.                |
+| `interval` | required                  | Time between the starts of checks, in ms.      |
+| `timeout`  | `10_000`                  | Limit on one check, including verification.    |
+| `maxAge`   | `max(interval, timeout) + timeout` | Age at which a verified result stops counting. |
+| `signal`   | none                      | Stops the monitor when aborted.                |
 
-`monitor.refresh()` runs a check now; simultaneous calls share one, and a
-monitor never runs two checks at once. `monitor.current` returns the latest
+A check that overruns `interval` is followed at once. The default `maxAge`
+keeps a verified result current until the next successful check lands.
+
+`monitor.refresh()` starts a check, or returns the one in progress; a monitor
+never runs two checks at once. `monitor.current` returns the latest
 result, and `stop()` ends polling and invalidates the result.
 
 ## Local development

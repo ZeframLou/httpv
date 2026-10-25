@@ -329,9 +329,9 @@ A monitor repeats the check for an endpoint. It:
 - MUST stop treating a `verified` result as current once its age reaches a
   configured maximum, even while a later check is still running;
 - SHOULD start checks at a fixed interval, measured between the starts of
-  consecutive checks, and SHOULD set the maximum age to at least that interval
-  plus the timeout, so that requests are not blocked between two successful
-  checks;
+  consecutive checks, and SHOULD set the maximum age to at least the larger of
+  that interval and the timeout, plus the timeout, so that requests are not
+  blocked between two successful checks;
 - MUST let the application test, where a request depends on the endpoint,
   that the latest result is `verified` and current, and MUST fail that test
   until a check has completed with `verified`, after the monitor has stopped,

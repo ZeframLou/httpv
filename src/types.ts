@@ -61,7 +61,7 @@ export interface WatchOptions {
   /** Bound on one check, including verification. Default 10 s. */
   timeout?: number | undefined;
   /** Age at which a verified result stops gating requests, measured from
-   * the start of its check. Default interval + timeout. */
+   * the start of its check. Default max(interval, timeout) + timeout. */
   maxAge?: number | undefined;
   /** Called on the first result, on expiry, and whenever the status, reason
    * or certified statement changes. */

@@ -174,16 +174,15 @@ test("a check that blocks past its timeout is discarded even if it finishes firs
 });
 
 test("a check abandoned at its timeout finishes before the next one starts", async () => {
-  const { backend, app, dependency, publish, v2 } = setup();
+  const { backend, app, dependency, publish, served, v2 } = setup();
   using _ = app;
   const stall = gate();
-  let calls = 0;
-  const monitor = client(
-    slow(backend, () => {
-      calls++;
-      return stall.closed;
-    }),
-  ).watch(dependency, { interval: 60_000, timeout: 50 });
+  // A transport that ignores cancellation, so an abandoned check that started
+  // would reach the server.
+  const monitor = createHTTPV({
+    backend: slow(backend, () => stall.closed),
+    fetch: (url, init) => fetch(url, { ...init, signal: null }),
+  }).watch(dependency, { interval: 60_000, timeout: 50 });
   try {
     expect((await monitor.refresh()).reason).toBe("timeout");
     // A different certificate, so the verifier's cache cannot merge the work.
@@ -191,14 +190,14 @@ test("a check abandoned at its timeout finishes before the next one starts", asy
     expect((await monitor.refresh()).reason).toBe("timeout");
     expect((await monitor.refresh()).reason).toBe("timeout");
     stall.open();
-    await Bun.sleep(20);
+    await Bun.sleep(50);
     // The checks abandoned while waiting never started.
-    expect(calls).toBe(1);
+    expect(served.length).toBe(1);
     expect((await monitor.refresh()).status).toBe("verified");
-    expect(calls).toBe(2);
+    expect(served.length).toBe(2);
     monitor.stop();
     expect((await monitor.refresh()).reason).toBe("stopped");
-    expect(calls).toBe(2);
+    expect(served.length).toBe(2);
   } finally {
     stall.open();
     monitor.stop();
@@ -339,4 +338,30 @@ test("stopping from onChange is not itself notified", async () => {
   );
   expect((await monitor.refresh()).reason).toBe("stopped");
   expect(reasons).toEqual(["expired"]);
+});
+
+test("the default maxAge covers a check that overruns the interval", async () => {
+  const { backend, app, dependency } = setup();
+  using _ = app;
+  const reasons: string[] = [];
+  // Each check takes 300 ms in discovery, which the verifier's cache cannot
+  // skip, so the second lands about 600 ms after the first started: past
+  // interval + timeout (450), within the default (800).
+  const monitor = createHTTPV({
+    backend,
+    fetch: async (url, init) => {
+      await Bun.sleep(300);
+      return fetch(url, init);
+    },
+  }).watch(dependency, {
+    interval: 50,
+    timeout: 400,
+    onChange: (result) => reasons.push(result.reason),
+  });
+  try {
+    await Bun.sleep(1000);
+    expect(reasons).toEqual(["exact-match"]);
+  } finally {
+    monitor.stop();
+  }
 });

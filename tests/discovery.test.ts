@@ -39,21 +39,30 @@ test("discovery returns the certificate; every other request reaches the applica
 });
 
 test("discovery needs HTTPS, except to loopback, and a well-formed request", async () => {
-  using app = listen(v1);
-  const httpv = createHTTPV();
-  await expect(httpv.query(app.url, { method: "POST" })).rejects.toThrow(
-    "HTTPS",
-  );
+  const sent: URL[] = [];
+  const httpv = createHTTPV({
+    fetch: async (url) => {
+      sent.push(url);
+      return new Response();
+    },
+  });
   for (const [url, method] of [
+    ["https://inventory.example/reservations", "BAD()"],
     ["http://inventory.example/reservations", "POST"],
     ["https://user@inventory.example/reservations", "POST"],
     ["https://inventory.example/reservations#", "POST"],
     ["not a url", "POST"],
-    [app.url, "BAD()"],
   ])
     await expect(
       httpv.query(url!, { ...local, method: method! }),
     ).rejects.toMatchObject({ reason: "unavailable" });
+  await expect(
+    httpv.query("http://localhost/r", { method: "POST" }),
+  ).rejects.toThrow("HTTPS");
+  // None of these reached the network; loopback with permission does.
+  expect(sent).toEqual([]);
+  await httpv.query("http://localhost/r", local).catch(() => {});
+  expect(sent.map(String)).toEqual(["http://localhost/r"]);
 });
 
 test("providers run per request, and a failing one makes the resource unavailable", async () => {
@@ -78,6 +87,7 @@ test("routes and static certificates are validated at startup", () => {
     "POST",
     "POST reservations",
     "POST /a?b",
+    "POST /a b",
     "POST /*",
     "POST /café",
     "POST /a/../b",
@@ -108,17 +118,28 @@ test("discovery accepts only the closed httpv/1 envelope", async () => {
 });
 
 test("responses are classified as SPEC 4.3 says", async () => {
+  // A valid envelope padded to exactly 64 KiB is read; one byte more is not.
   const sent: RequestInit[] = [];
-  const oversized = createHTTPV({
-    fetch: async (_url, init) => {
-      sent.push(init);
-      return new Response("x".repeat(64 * 1024 + 1), {
-        headers: { "content-type": MEDIA_TYPE },
-      });
-    },
-  });
+  const padded = (size: number) =>
+    createHTTPV({
+      fetch: async (_url, init) => {
+        sent.push(init);
+        const body = JSON.stringify({
+          format: "httpv/1",
+          certificates: { POST: v1 },
+        });
+        return new Response(body.padEnd(size), {
+          headers: { "content-type": MEDIA_TYPE },
+        });
+      },
+    });
+  expect(
+    await padded(64 * 1024).query("https://example.test/r", {
+      method: "POST",
+    }),
+  ).toEqual(v1);
   await expect(
-    oversized.query("https://example.test/r", { method: "POST" }),
+    padded(64 * 1024 + 1).query("https://example.test/r", { method: "POST" }),
   ).rejects.toMatchObject({ reason: "invalid-advertisement" });
   expect(sent[0]).toMatchObject({
     method: "OPTIONS",
@@ -143,21 +164,24 @@ test("responses are classified as SPEC 4.3 says", async () => {
       }),
     ).rejects.toMatchObject({ reason });
 
-  // A connection that fails mid-body is a transport error, not bad content.
-  const broken = createHTTPV({
-    fetch: async () =>
-      new Response(
-        new ReadableStream({
-          pull(controller) {
-            controller.error(new Error("connection reset"));
-          },
-        }),
-        { headers: { "content-type": MEDIA_TYPE } },
-      ),
-  });
-  await expect(
-    broken.query("https://example.test/r", { method: "POST" }),
-  ).rejects.toMatchObject({ reason: "unavailable" });
+  // A connection that fails mid-body is a transport error, not bad content,
+  // whether or not the response was one HTTPV reads.
+  for (const status of [200, 503]) {
+    const broken = createHTTPV({
+      fetch: async () =>
+        new Response(
+          new ReadableStream({
+            pull(controller) {
+              controller.error(new Error("connection reset"));
+            },
+          }),
+          { status, headers: { "content-type": MEDIA_TYPE } },
+        ),
+    });
+    await expect(
+      broken.query("https://example.test/r", { method: "POST" }),
+    ).rejects.toMatchObject({ reason: "unavailable" });
+  }
 
   for (const maxResponseBytes of [Number.NaN, Infinity, 0, 1024])
     expect(() => createHTTPV({ maxResponseBytes })).toThrow(RangeError);
