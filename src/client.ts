@@ -1,4 +1,4 @@
-import { createVerifier, loadRequirements } from "zklean";
+import { createVerifier, loadRequirements, satisfies } from "zklean";
 import type { Requirements } from "zklean";
 import {
   DiscoveryError,
@@ -150,10 +150,7 @@ export function createHTTPV(options: ClientOptions = {}) {
       };
     }
     // Same name and identity: the same statement about the same definitions.
-    const met = Object.entries(requirements.claims).every(
-      ([name, id]) => certificate.claims[name] === id,
-    );
-    return met
+    return satisfies(certificate, requirements)
       ? { ...identity, status: "verified", reason: "exact-match" }
       : { ...identity, status: "incompatible", reason: "requirements-not-met" };
   }
