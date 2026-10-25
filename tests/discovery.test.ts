@@ -23,10 +23,14 @@ test("discovery returns the certificate; every other request reaches the applica
   expect((await ask(app.url, MEDIA_TYPE)).headers.get("cache-control")).toBe(
     "no-store",
   );
+  // Only OPTIONS is discovery, whatever the request accepts.
   for (const method of ["POST", "OPTIONS"])
-    expect(await fetch(app.url, { method }).then((r) => r.json())).toEqual({
-      method,
-    });
+    expect(
+      await fetch(app.url, {
+        method,
+        headers: method === "POST" ? { Accept: MEDIA_TYPE } : {},
+      }).then((r) => r.json()),
+    ).toEqual({ method });
   // A path without certificates gets the application's own OPTIONS response.
   const other = app.url.replace("reservations", "other");
   expect(await ask(other, MEDIA_TYPE).then((r) => r.json())).toEqual({
@@ -61,8 +65,17 @@ test("discovery needs HTTPS, except to loopback, and a well-formed request", asy
   ).rejects.toThrow("HTTPS");
   // None of these reached the network; loopback with permission does.
   expect(sent).toEqual([]);
-  await httpv.query("http://localhost/r", local).catch(() => {});
-  expect(sent.map(String)).toEqual(["http://localhost/r"]);
+  for (const url of [
+    "http://localhost/r",
+    "http://[::1]/r",
+    "http://127.0.0.2/r",
+  ])
+    await httpv.query(url, local).catch(() => {});
+  expect(sent.map(String)).toEqual([
+    "http://localhost/r",
+    "http://[::1]/r",
+    "http://127.0.0.2/r",
+  ]);
 });
 
 test("providers run per request, and a failing one makes the resource unavailable", async () => {
@@ -153,9 +166,32 @@ test("responses are classified as SPEC 4.3 says", async () => {
   await expect(
     plainJson.query("https://example.test/r", { method: "POST" }),
   ).rejects.toMatchObject({ reason: "missing-certificate" });
+  // A method the envelope does not list, even one Object.prototype has.
+  await expect(
+    respond(envelope).query("https://example.test/r", {
+      method: "constructor",
+    }),
+  ).rejects.toMatchObject({ reason: "missing-certificate" });
+  // Invalid UTF-8 is rejected even where lenient decoding would get by: in
+  // the name of a method the client would otherwise ignore.
+  const json = new TextEncoder().encode(
+    JSON.stringify({ format: "httpv/1", certificates: { "X?": v1, POST: v1 } }),
+  );
+  json[json.indexOf(0x3f)] = 0xff;
+  const latin1 = createHTTPV({
+    fetch: async () =>
+      new Response(json, { headers: { "content-type": MEDIA_TYPE } }),
+  });
+  await expect(
+    latin1.query("https://example.test/r", { method: "POST" }),
+  ).rejects.toMatchObject({ reason: "invalid-advertisement" });
   for (const [status, reason] of [
     [503, "unavailable"],
+    [400, "unavailable"],
+    [404, "missing-certificate"],
+    [405, "missing-certificate"],
     [406, "missing-certificate"],
+    [501, "missing-certificate"],
     [203, "invalid-advertisement"],
   ] as const)
     await expect(
@@ -209,6 +245,7 @@ test("only an explicit media range with a valid non-zero weight is discovery", a
     `${MEDIA_TYPE};q=2`,
     `${MEDIA_TYPE}; q = 0.5`,
     `${MEDIA_TYPE};v=1`,
+    `${MEDIA_TYPE};q=1;v=1`,
     `text/plain;x=",${MEDIA_TYPE},"`,
     `text/plain;x="a, ${MEDIA_TYPE}, \\""`,
   ])
@@ -232,7 +269,7 @@ test("a method named __proto__ is still advertised", async () => {
   ).toEqual(v1);
 });
 
-test("a caller's signal does not remove the discovery timeout", async () => {
+test("a caller's signal cancels discovery without removing the timeout", async () => {
   const hanging = createHTTPV({
     fetch: (_url, init) =>
       new Promise((_, reject) =>
@@ -241,13 +278,23 @@ test("a caller's signal does not remove the discovery timeout", async () => {
         ),
       ),
   });
-  const query = hanging.query("https://example.test/r", {
+  const hung = () => Bun.sleep(1000).then(() => "hung");
+  const cancel = new AbortController();
+  setTimeout(() => cancel.abort(), 10);
+  const cancelled = hanging.query("https://example.test/r", {
+    method: "POST",
+    signal: cancel.signal,
+    timeout: 10_000,
+  });
+  expect(
+    await Promise.race([cancelled.catch((error) => error), hung()]),
+  ).toMatchObject({ reason: "unavailable" });
+  const timedOut = hanging.query("https://example.test/r", {
     method: "POST",
     signal: new AbortController().signal,
     timeout: 50,
   });
-  const hung = Bun.sleep(1000).then(() => "hung");
   expect(
-    await Promise.race([query.catch((error) => error), hung]),
+    await Promise.race([timedOut.catch((error) => error), hung()]),
   ).toMatchObject({ reason: "unavailable" });
 });

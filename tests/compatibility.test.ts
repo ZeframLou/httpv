@@ -21,6 +21,14 @@ test("an upgrade that adds claims keeps an exact match", async () => {
     });
 });
 
+test("every required claim must be certified", async () => {
+  expect(
+    await compare(fixtures.v1, {
+      requirements: { ...fixtures.exact, claims: fixtures.v2.claims },
+    }),
+  ).toMatchObject({ status: "incompatible", reason: "requirements-not-met" });
+});
+
 test("a redefined operation changes the claim's identity", async () => {
   expect(await compare(fixtures.v3)).toMatchObject({
     status: "incompatible",

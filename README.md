@@ -94,7 +94,9 @@ import { serve } from "httpv";
 Bun.serve({
   ...serve({
     // reservations.json is the certificate `zklean prove` wrote.
-    routes: { "POST /reservations": await Bun.file("reservations.json").json() },
+    routes: {
+      "POST /reservations": await Bun.file("reservations.json").json(),
+    },
     fetch: app, // your existing request handler
   }),
 });

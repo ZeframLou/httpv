@@ -124,6 +124,7 @@ Your requirements are a JSON file of claims and identities:
    yourself, as `axiom`s in your own module:
    an identity covers a statement, not its proof, so an axiom matches a theorem
    with the same statement.
+
 3. Commit `requirements.json`.
 
 Make sure the claims are about the function the endpoint implements; their
@@ -148,7 +149,9 @@ const inventory = {
 
 const result = await httpv.check(inventory);
 if (result.status !== "verified")
-  throw new Error(`inventory requirements: ${result.status} (${result.reason})`);
+  throw new Error(
+    `inventory requirements: ${result.status} (${result.reason})`,
+  );
 ```
 
 `check` fetches the endpoint's certificate, verifies it, and compares its claim
@@ -200,8 +203,6 @@ async function reserve(quantity: number) {
     body: JSON.stringify({ quantity }),
   });
 }
-
-process.on("SIGTERM", () => monitor.stop());
 ```
 
 Call `requireVerified()` wherever a request depends on the endpoint. It throws
@@ -213,18 +214,19 @@ result expires, and whenever the status, reason, or certified claims or axioms
 change. If it throws, monitoring continues, but the error is reported as
 uncaught, which ends a Bun process unless you handle `uncaughtException`.
 
-| Setting    | Default              | Meaning                                        |
-| ---------- | -------------------- | ---------------------------------------------- |
-| `interval` | required                  | Time between the starts of checks, in ms.      |
-| `timeout`  | `10_000`                  | Limit on one check, including verification.    |
+| Setting    | Default                            | Meaning                                        |
+| ---------- | ---------------------------------- | ---------------------------------------------- |
+| `interval` | required                           | Time between the starts of checks, in ms.      |
+| `timeout`  | `10_000`                           | Limit on one check, including verification.    |
 | `maxAge`   | `max(interval, timeout) + timeout` | Age at which a verified result stops counting. |
-| `signal`   | none                      | Stops the monitor when aborted.                |
+| `signal`   | none                               | Stops the monitor when aborted.                |
 
 A check that overruns `interval` is followed at once. The default `maxAge`
 keeps a verified result current until the next successful check lands.
 
 `monitor.refresh()` starts a check, or returns the one in progress; a monitor
-never runs two checks at once. `monitor.current` returns the latest
+never runs two checks at once. A monitor's timers keep the process alive, so
+call `monitor.stop()`, or abort the `signal` setting, in your shutdown path. `monitor.current` returns the latest
 result, and `stop()` ends polling and invalidates the result.
 
 ## Local development

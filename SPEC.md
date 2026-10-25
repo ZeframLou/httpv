@@ -127,13 +127,13 @@ Certificates use the ZKLean format [ZKLEAN], which defines their encoding,
 validation, and verification; this section is informative. A certificate is a
 JSON object whose members are:
 
-| Member   | Value                                                                  |
-| -------- | ---------------------------------------------------------------------- |
-| `format` | The string `"zklean/1"`.                                               |
-| `claims` | A non-empty object mapping each proved claim's name to its identity.   |
-| `axioms` | An object mapping each axiom the proofs use to its identity.           |
+| Member   | Value                                                                     |
+| -------- | ------------------------------------------------------------------------- |
+| `format` | The string `"zklean/1"`.                                                  |
+| `claims` | A non-empty object mapping each proved claim's name to its identity.      |
+| `axioms` | An object mapping each axiom the proofs use to its identity.              |
 | `proof`  | A succinct proof of the statement formed by `format`, `claims`, `axioms`. |
-| `source` | The URL of a Lean export containing the claims and what they refer to. |
+| `source` | The URL of a Lean export containing the claims and what they refer to.    |
 
 The proof does not cover `source`, which only tells a reader where to find the
 Lean declarations behind the identities (Section 7.6).
@@ -259,16 +259,16 @@ MUST limit how much it reads, and MAY reject larger content. It classifies the
 response by the first matching row below. Every outcome except
 the last makes the check result `unknown` (Section 5.2).
 
-| Response                                                                                             | Outcome          |
-| ---------------------------------------------------------------------------------------------------- | ---------------- |
-| A network error, a redirect, a timeout, or a failure while reading the content                       | Unavailable      |
-| A `2xx` status other than `200` labeled `application/httpv+json`                                     | Invalid          |
-| `404 (Not Found)`, `405 (Method Not Allowed)`, `406 (Not Acceptable)` or `501 (Not Implemented)`; or a `2xx` response not labeled `application/httpv+json` | No certificate |
-| Any other status other than `200 (OK)`                                                               | Unavailable      |
-| Content over the size limit, not valid UTF-8 JSON, or not an object with exactly the members above   | Invalid          |
-| A valid object without the requested method                                                          | No certificate   |
-| A valid object whose certificate for that method is not well formed [ZKLEAN]                         | Invalid          |
-| Otherwise                                                                                            | The certificate  |
+| Response                                                                                                                                                   | Outcome         |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------- |
+| A network error, a redirect, a timeout, or a failure while reading the content                                                                             | Unavailable     |
+| A `2xx` status other than `200` labeled `application/httpv+json`                                                                                           | Invalid         |
+| `404 (Not Found)`, `405 (Method Not Allowed)`, `406 (Not Acceptable)` or `501 (Not Implemented)`; or a `2xx` response not labeled `application/httpv+json` | No certificate  |
+| Any other status other than `200 (OK)`                                                                                                                     | Unavailable     |
+| Content over the size limit, not valid UTF-8 JSON, or not an object with exactly the members above                                                         | Invalid         |
+| A valid object without the requested method                                                                                                                | No certificate  |
+| A valid object whose certificate for that method is not well formed [ZKLEAN]                                                                               | Invalid         |
+| Otherwise                                                                                                                                                  | The certificate |
 
 A client MUST validate the certificate for the requested method and SHOULD
 ignore the others. A client MAY reject content with duplicate member names as
@@ -308,10 +308,10 @@ operation that still satisfies the claim; its requirements then need review.
 
 ### 5.2. Results
 
-| Result         | Meaning                                                                                  |
-| -------------- | ---------------------------------------------------------------------------------------- |
-| `verified`     | The certificate verifies and certifies every required claim.                             |
-| `incompatible` | The certificate verifies, but a required claim is missing or has a different identity.  |
+| Result         | Meaning                                                                                                                                            |
+| -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `verified`     | The certificate verifies and certifies every required claim.                                                                                       |
+| `incompatible` | The certificate verifies, but a required claim is missing or has a different identity.                                                             |
 | `unknown`      | Discovery failed, the certificate does not verify or uses an axiom outside the policy, the requirements are unusable, or the check did not finish. |
 
 An implementation MUST NOT report `unknown` or `incompatible` as `verified`.
@@ -535,12 +535,12 @@ A client states the same proposition as an `axiom`, over identical
 definitions of the operation and the types it uses, and generates its
 requirements from it; that gives the identity of the service's theorem. Then:
 
-| Server publishes                                  | Result                                                                    |
-| ------------------------------------------------- | ------------------------------------------------------------------------- |
-| Version 1, proving `conserves`                    | `verified`                                                                |
-| Version 2, proving `conserves` and a second claim | `verified`; extra claims are allowed                                      |
+| Server publishes                                  | Result                                                                                     |
+| ------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| Version 1, proving `conserves`                    | `verified`                                                                                 |
+| Version 2, proving `conserves` and a second claim | `verified`; extra claims are allowed                                                       |
 | Version 3, accepting backorders                   | `incompatible`; the operation and the statement changed, so `conserves` has a new identity |
-| Version 2 with one proof byte altered             | `unknown`; the certificate does not verify                                |
+| Version 2 with one proof byte altered             | `unknown`; the certificate does not verify                                                 |
 
 ## Appendix B. Author
 

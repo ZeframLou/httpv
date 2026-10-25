@@ -365,3 +365,16 @@ test("the default maxAge covers a check that overruns the interval", async () =>
     monitor.stop();
   }
 });
+
+test("a dependency changed after watch() is checked as it was", async () => {
+  const { backend, app, dependency, v3 } = setup();
+  using _ = app;
+  const watched = structuredClone(dependency);
+  const monitor = client(backend).watch(watched, { interval: 60_000 });
+  watched.requirements = { ...watched.requirements, claims: v3.claims };
+  try {
+    expect((await monitor.refresh()).status).toBe("verified");
+  } finally {
+    monitor.stop();
+  }
+});

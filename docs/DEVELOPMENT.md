@@ -36,12 +36,12 @@ current certificate format and are waiting to be re-proved. Until they are:
 
 ## Repository layout
 
-| Path                   | Contents                                                           |
-| ---------------------- | ------------------------------------------------------------------ |
-| `src/`                 | The library: protocol, server, and client with its check.         |
-| `examples/upgrades.ts` | The runnable example.                                              |
-| `examples/inventory/`  | Its Lean project, requirements, and certificates (see above).     |
-| `scripts/models.ts`    | Each module's claims and output path.                              |
+| Path                   | Contents                                                      |
+| ---------------------- | ------------------------------------------------------------- |
+| `src/`                 | The library: protocol, server, and client with its check.     |
+| `examples/upgrades.ts` | The runnable example.                                         |
+| `examples/inventory/`  | Its Lean project, requirements, and certificates (see above). |
+| `scripts/models.ts`    | Each module's claims and output path.                         |
 
 Most tests build certificates from made-up identities and sign them with a
 test-only Ed25519 backend, so they run in milliseconds. `tests/groth16.test.ts`

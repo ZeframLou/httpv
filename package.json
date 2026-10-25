@@ -17,8 +17,8 @@
     "example": "bun examples/upgrades.ts",
     "prove": "bun scripts/prove.ts",
     "check:certificates": "bun scripts/check-certificates.ts",
-    "format": "prettier --write src tests/*.ts scripts examples/*.ts package.json tsconfig.json",
-    "format:check": "prettier --check src tests/*.ts scripts examples/*.ts package.json tsconfig.json"
+    "format": "prettier --write src tests/*.ts scripts examples/*.ts package.json tsconfig.json *.md docs",
+    "format:check": "prettier --check src tests/*.ts scripts examples/*.ts package.json tsconfig.json *.md docs"
   },
   "peerDependencies": {
     "zklean": "0.1.0"
