@@ -55,10 +55,10 @@ This document places requirements on three roles:
 
 - a **server**: an origin server that publishes certificates (Sections 4.1
   and 4.2);
-- a **client**: software that discovers and checks certificates (Sections 4.1,
-  4.3 and 5);
+- a **client**: software that discovers and checks certificates (Sections 3.2,
+  4.1, 4.3, 4.4, 5, 7.5 and 7.6);
 - a **monitor**: a client component that repeats checks and gates dependent
-  requests (Section 6).
+  requests (Sections 6 and 7.7).
 
 ### 1.3. Terminology
 
@@ -66,7 +66,9 @@ This document uses the terms "resource", "target resource", "target URI",
 "method", "origin server", and "user agent" as defined in HTTP Semantics
 [RFC9110], and "JSON text" as defined in [RFC8259].
 
-- **Endpoint:** one method of one target resource, such as `POST /units`.
+- **Endpoint:** one method of the resources an origin serves at one path,
+  such as `POST /units` at `https://inventory.example`. The query is not part
+  of it.
 - **Operation:** the Lean function that defines an endpoint's behavior.
 - **Claim:** a proposition proved about one or more operations, named by its
   fully qualified Lean name.
@@ -108,11 +110,14 @@ This document uses the terms "resource", "target resource", "target URI",
 3. It sends dependent requests only while the latest check succeeded and is
    recent enough (Section 6).
 
-Discovery uses `OPTIONS` on the target resource itself because a certificate
-describes that resource and needs no URI of its own. [RFC9205] notes the costs
-of this choice: `OPTIONS` responses are not cacheable, intermediaries often
-answer `OPTIONS` themselves, and browsers send a preflight first. Sections 4.4,
-7.2 and 7.9 address each.
+Discovery uses `OPTIONS` on the target resource itself. [RFC9205],
+Section 4.5.2, recommends a `Link` header field or a well-known URI for
+metadata instead, because `OPTIONS` responses have no URL of their own, are not
+cacheable, add a round trip, and are not supported everywhere. HTTPV accepts
+those costs so that each endpoint's certificate is found at the endpoint itself,
+with no second URI to keep consistent with it. This document adds two costs:
+intermediaries often answer `OPTIONS` themselves (Section 7.2), and browsers
+send a preflight first (Section 7.9).
 
 ## 3. Certificates and requirements
 
@@ -168,10 +173,10 @@ Accept: application/httpv+json
 Cache-Control: no-cache
 ```
 
-The client MUST use the `https` scheme. It MAY use `http` for a host that is a
-loopback address or a `localhost` name, when the user has explicitly allowed
-it; names under `localhost` resolve to loopback addresses [RFC6761, Section
-6.3]. The target URI MUST NOT contain userinfo or a fragment [RFC3986]. The
+The client MUST use the `https` scheme. It MAY use `http`, when the user has
+explicitly allowed it, for a host that is a loopback IP address or the name
+`localhost` [RFC6761, Section 6.3]. The target URI MUST NOT contain userinfo
+[RFC9110, Section 4.2.4] or a fragment [RFC3986]. The
 client SHOULD send `Cache-Control: no-cache` [RFC9111] and MUST NOT follow
 redirects.
 
@@ -188,15 +193,17 @@ A server MUST process any other `OPTIONS` request as an ordinary request:
 
 ### 4.2. Response
 
-The server selects the certificates by the path of the target URI, as parsed
-by the URL Standard [URL], which removes dot segments; the query is not used.
-It MUST select the resource its ordinary request routing would select for the
-same path. If the path has no certificates, the server MUST process the
-request as an ordinary `OPTIONS` request.
+The server selects the certificates by the path of the target URI as the URL
+Standard [URL] parses it, which removes dot segments and does not decode
+percent-encoding, compared exactly; the query is not used. A server MUST NOT
+return certificates for a path that its ordinary request routing maps to a
+different resource. If the path has no certificates, the server MUST process
+the request as an ordinary `OPTIONS` request.
 
 Otherwise the server MUST respond with `200 (OK)` and `Content-Type:
 application/httpv+json`, with content that is a JSON text [RFC8259] in UTF-8
-and an I-JSON message [RFC7493], and SHOULD keep that content under 64 KiB:
+and an I-JSON message [RFC7493]. The content, after removing content codings,
+SHOULD NOT exceed 64 KiB:
 
 ```json
 {
@@ -222,9 +229,9 @@ compared case-sensitively. Fetch [FETCH] normalizes the methods `DELETE`,
 write those six in uppercase, and a client MUST normalize them the same way
 before looking a method up. A certificate for `GET` does not cover `HEAD`.
 
-The server SHOULD send `Cache-Control: no-store`. It MAY send `Allow`
-[RFC9110, Section 10.2.1]; a server that answers discovery without consulting
-the application may not know the resource's methods.
+The server SHOULD send `Cache-Control: no-store`, and SHOULD send `Allow`
+[RFC9110, Section 9.3.7] when it knows the resource's methods. A server MUST
+publish only certificates whose `source` is an `https` URL (Section 7.6).
 
 If the server cannot produce a certificate it publishes for the path, it MUST
 respond with a `5xx` status such as `503 (Service Unavailable)`, and the
@@ -240,9 +247,9 @@ operation covers the whole parameter domain.
 
 ### 4.3. Client processing
 
-The client MUST limit the size of the response content it reads, after
-removing content codings, and SHOULD reject content larger than 64 KiB. It
-classifies the response by the first matching row below. Every outcome except
+The client MUST accept content of up to 64 KiB after removing content codings,
+MUST limit how much it reads, and MAY reject larger content. It classifies the
+response by the first matching row below. Every outcome except
 the last makes the check result `unknown` (Section 5.2).
 
 | Response                                                                                             | Outcome          |
@@ -258,7 +265,7 @@ the last makes the check result `unknown` (Section 5.2).
 
 A client MUST validate the certificate for the requested method and SHOULD
 ignore the others. A client MAY reject content with duplicate member names as
-invalid.
+invalid; whichever certificate it reads, it then verifies that certificate.
 
 ### 4.4. Caching
 
@@ -313,9 +320,11 @@ A monitor repeats the check for an endpoint. It:
 - MUST measure a result's age from a time no later than when it sent the
   discovery request that produced it;
 - MUST stop treating a `verified` result as current once its age reaches a
-  configured maximum, even while a later check is still running, and SHOULD
-  set that maximum to at least the check interval plus the timeout, so that
-  requests are not blocked between two successful checks;
+  configured maximum, even while a later check is still running;
+- SHOULD start checks at a fixed interval, measured between the starts of
+  consecutive checks, and SHOULD set the maximum age to at least that interval
+  plus the timeout, so that requests are not blocked between two successful
+  checks;
 - MUST let the application test, where a request depends on the endpoint,
   that the latest result is `verified` and current, and MUST fail that test
   until a check has completed with `verified`, after the monitor has stopped,
@@ -386,9 +395,9 @@ statement identity identifies that.
 ### 7.6. Source pointers
 
 `source` is not covered by the proof and may point anywhere. A client MUST use
-it only to obtain Lean declarations, MUST discard any declaration whose
-recomputed identity differs from the certified one, and MUST NOT execute
-content fetched from it. A client MUST NOT dereference a `source` that is not
+it only to obtain Lean declarations, MUST discard the whole export unless it
+reproduces every certified identity [ZKLEAN], and MUST NOT execute content
+fetched from it. A client MUST NOT dereference a `source` that is not
 an `https` URL when the certificate came over the network, so that a
 certificate cannot direct it to local files. It SHOULD NOT dereference a
 `source` whose host resolves to a loopback, link-local, or private address
@@ -398,8 +407,10 @@ unless configured to, and MUST bound the size of what it fetches.
 
 Discovery responses are small, but verification costs CPU time, and a server
 that re-randomizes its proof on every response defeats caching by certificate
-bytes. Clients MUST bound response size (Section 4.3) and the duration of each
-check (Section 6), and SHOULD bound the number of concurrent verifications.
+bytes. Clients MUST bound response size (Section 4.3); a monitor MUST bound the
+duration of each check (Section 6), and other clients SHOULD bound
+verification time. Clients SHOULD bound the number of concurrent
+verifications.
 Servers can apply ordinary rate limiting to `OPTIONS` requests.
 
 ### 7.8. Time of check and time of use
@@ -414,10 +425,10 @@ gap.
 `OPTIONS` is not a CORS-safelisted method, so a user agent sends a CORS
 preflight request [FETCH] before a cross-origin discovery request. Section 4.1
 keeps preflight requests away from discovery, so the application answers them
-with its usual CORS policy. To let browsers on another origin discover
-certificates, the preflight response MUST allow the method `OPTIONS` and the
-request header `Cache-Control` if the client sends it, and the discovery
-response MUST carry `Access-Control-Allow-Origin` for that origin.
+with its usual CORS policy. For browsers on another origin to discover
+certificates, the preflight response needs to allow the method `OPTIONS` and
+the request header `Cache-Control`, and the discovery response needs
+`Access-Control-Allow-Origin` for that origin.
 
 ## 8. Privacy considerations
 
@@ -431,9 +442,10 @@ accepts.
 ## 9. IANA considerations
 
 This draft requests no registration yet. A registration in the standards tree
-requires the IETF as change controller [RFC6838, Section 3.1]; until then,
-implementations use the media type below on the understanding that it may
-change. The template for a future registration is:
+requires an IETF-approved specification with the IETF as change controller
+[RFC6838, Section 3.1]. Until then, deployments use the name below without
+registration, at the risk that a registration changes it. The template for a
+future registration is:
 
 - **Type name:** application
 - **Subtype name:** httpv+json
@@ -444,8 +456,8 @@ change. The template for a future registration is:
   or active content. It carries cryptographic proofs that a recipient verifies
   with a verifying key it chose; the content cannot select that key. Its
   `source` members are untrusted URLs. See Section 7 of this document.
-- **Interoperability considerations:** the `format` member identifies the
-  version; recipients MUST reject unknown versions.
+- **Interoperability considerations:** recipients MUST reject a `format`
+  other than `httpv/1`; later versions use a different media type.
 - **Published specification:** this document.
 - **Applications that use this media type:** HTTPV clients and servers.
 - **Fragment identifier considerations:** as specified for `+json` in
@@ -509,8 +521,9 @@ theorem UnitInventory.conserves (stock : UnitInventory.Stock) :
     UnitInventory.Conserves stock (UnitInventory.POST_units stock)
 ```
 
-A client states the same proposition as an `axiom` and generates its
-requirements from it, which gives the identity of the service's theorem. Then:
+A client states the same proposition as an `axiom`, over identical
+definitions of the operation and the types it uses, and generates its
+requirements from it; that gives the identity of the service's theorem. Then:
 
 | Server publishes                                  | Result                                                                    |
 | ------------------------------------------------- | ------------------------------------------------------------------------- |

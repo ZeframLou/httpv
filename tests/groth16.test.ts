@@ -14,8 +14,7 @@ const load = async (name: string) =>
 // The example certificates are re-proved separately for the current format;
 // until then this test cannot run.
 const current = await load("v1");
-const reproved =
-  Object.hasOwn(current, "source") && !Object.hasOwn(current, "definitions");
+const reproved = Object.hasOwn(current, "source");
 
 test.skipIf(!reproved)(
   "real Groth16 certificates: upgrades and tampering",

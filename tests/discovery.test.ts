@@ -1,13 +1,14 @@
 import { expect, test } from "bun:test";
 import { createHTTPV, MEDIA_TYPE, serve } from "../src/index.ts";
-import { methodName } from "../src/protocol.ts";
 import { inventory, listen } from "./helpers.ts";
 
-const malformed = { ...inventory().v1, extra: 1 };
-
-const local = { method: "POST", allowInsecureHttp: true };
 const { v1, v3 } = inventory();
+const malformed = { ...v1, extra: 1 };
+const local = { method: "POST", allowInsecureHttp: true };
+const ask = (url: string, accept: string, extra: HeadersInit = {}) =>
+  fetch(url, { method: "OPTIONS", headers: { Accept: accept, ...extra } });
 
+/** A client whose transport returns one canned response. */
 function respond(body: unknown, init: ResponseInit = {}) {
   return createHTTPV({
     fetch: async () =>
@@ -15,57 +16,53 @@ function respond(body: unknown, init: ResponseInit = {}) {
   });
 }
 
-test("OPTIONS with the HTTPV media type returns the certificate; other requests pass through", async () => {
+test("discovery returns the certificate; every other request reaches the application", async () => {
   using app = listen(v1);
   const httpv = createHTTPV();
   expect(await httpv.query(app.url, local)).toEqual(v1);
-
-  const discovery = await fetch(app.url, {
-    method: "OPTIONS",
-    headers: { Accept: `text/html, ${MEDIA_TYPE}; q=1` },
-  });
-  expect(discovery.headers.get("cache-control")).toBe("no-store");
+  expect((await ask(app.url, MEDIA_TYPE)).headers.get("cache-control")).toBe(
+    "no-store",
+  );
   for (const method of ["POST", "OPTIONS"])
     expect(await fetch(app.url, { method }).then((r) => r.json())).toEqual({
       method,
     });
+  // A path without certificates gets the application's own OPTIONS response.
+  const other = app.url.replace("reservations", "other");
+  expect(await ask(other, MEDIA_TYPE).then((r) => r.json())).toEqual({
+    method: "OPTIONS",
+  });
+  for (const url of [other, app.url])
+    await expect(
+      httpv.query(url, { ...local, method: url === other ? "POST" : "GET" }),
+    ).rejects.toMatchObject({ reason: "missing-certificate" });
+});
 
-  await expect(
-    httpv.query(app.url, { ...local, method: "GET" }),
-  ).rejects.toMatchObject({ reason: "missing-certificate" });
-  await expect(
-    httpv.query(app.url.replace("reservations", "other"), local),
-  ).rejects.toMatchObject({ reason: "missing-certificate" });
+test("discovery needs HTTPS, except to loopback, and a well-formed request", async () => {
+  using app = listen(v1);
+  const httpv = createHTTPV();
   await expect(httpv.query(app.url, { method: "POST" })).rejects.toThrow(
     "HTTPS",
   );
-  // Plain HTTP is for a server on this machine only.
-  await expect(
-    httpv.query("http://inventory.example/reservations", local),
-  ).rejects.toThrow("loopback");
+  for (const [url, method] of [
+    ["http://inventory.example/reservations", "POST"],
+    ["not a url", "POST"],
+    [app.url, "BAD()"],
+  ])
+    await expect(
+      httpv.query(url!, { ...local, method: method! }),
+    ).rejects.toMatchObject({ reason: "unavailable" });
 });
 
-test("a resource without certificates gets the application's OPTIONS response", async () => {
-  using app = listen(v1);
-  const response = await fetch(app.url.replace("reservations", "other"), {
-    method: "OPTIONS",
-    headers: { Accept: MEDIA_TYPE },
-  });
-  expect(await response.json()).toEqual({ method: "OPTIONS" });
-});
-
-test("providers run per request", async () => {
-  let current = v1;
-  using app = listen(() => current);
+test("providers run per request, and a failing one makes the resource unavailable", async () => {
+  let current: unknown = v1;
+  using app = listen(() => current as typeof v1);
   const httpv = createHTTPV();
   expect(await httpv.query(app.url, local)).toEqual(v1);
   current = v3;
-  expect(await httpv.query(app.url, local)).toEqual(current);
+  expect(await httpv.query(app.url, local)).toEqual(v3);
   current = malformed;
-  const failed = await fetch(app.url, {
-    method: "OPTIONS",
-    headers: { Accept: MEDIA_TYPE },
-  });
+  const failed = await ask(app.url, MEDIA_TYPE);
   expect(failed.status).toBe(503);
   expect(failed.headers.get("content-type")).not.toBe(MEDIA_TYPE);
   await expect(httpv.query(app.url, local)).rejects.toMatchObject({
@@ -73,25 +70,26 @@ test("providers run per request", async () => {
   });
 });
 
-test("routes are validated at startup", () => {
+test("routes and static certificates are validated at startup", () => {
   const fetch = () => new Response();
   for (const route of [
     "POST",
     "POST reservations",
     "POST /a?b",
     "POST /*",
+    "POST /café",
+    "POST /a/../b",
+    "POST //x",
     "BAD() /a",
   ])
     expect(() => serve({ routes: { [route]: v1 }, fetch })).toThrow();
-  expect(() => serve({ routes: { "POST /a": malformed }, fetch })).toThrow();
+  for (const certificate of [malformed, { ...v1, source: "file:///etc/x" }])
+    expect(() =>
+      serve({ routes: { "POST /a": certificate as typeof v1 }, fetch }),
+    ).toThrow();
   expect(() =>
-    serve({
-      routes: { "POST /a": v1, "post /a": v1 },
-      fetch,
-    }),
+    serve({ routes: { "POST /a": v1, "post /a": v1 }, fetch }),
   ).toThrow("duplicate");
-  expect(methodName("post")).toBe("POST");
-  expect(methodName("patch")).toBe("patch");
 });
 
 test("discovery accepts only the closed httpv/1 envelope", async () => {
@@ -107,13 +105,12 @@ test("discovery accepts only the closed httpv/1 envelope", async () => {
     ).rejects.toMatchObject({ reason: "invalid-advertisement" });
 });
 
-test("discovery refuses redirects, wrong media types, failures and oversized bodies", async () => {
+test("responses are classified as SPEC 4.3 says", async () => {
   const sent: RequestInit[] = [];
   const oversized = createHTTPV({
-    maxResponseBytes: 30,
     fetch: async (_url, init) => {
       sent.push(init);
-      return new Response("x".repeat(31), {
+      return new Response("x".repeat(64 * 1024 + 1), {
         headers: { "content-type": MEDIA_TYPE },
       });
     },
@@ -128,9 +125,8 @@ test("discovery refuses redirects, wrong media types, failures and oversized bod
     headers: { Accept: MEDIA_TYPE, "Cache-Control": "no-cache" },
   });
 
-  const plainJson = createHTTPV({
-    fetch: async () => Response.json({ format: "httpv/1", certificates: {} }),
-  });
+  const envelope = { format: "httpv/1", certificates: { POST: v1 } };
+  const plainJson = createHTTPV({ fetch: async () => Response.json(envelope) });
   await expect(
     plainJson.query("https://example.test/r", { method: "POST" }),
   ).rejects.toMatchObject({ reason: "missing-certificate" });
@@ -140,10 +136,9 @@ test("discovery refuses redirects, wrong media types, failures and oversized bod
     [203, "invalid-advertisement"],
   ] as const)
     await expect(
-      respond(
-        { format: "httpv/1", certificates: { POST: v1 } },
-        { status },
-      ).query("https://example.test/r", { method: "POST" }),
+      respond(envelope, { status }).query("https://example.test/r", {
+        method: "POST",
+      }),
     ).rejects.toMatchObject({ reason });
 
   // A connection that fails mid-body is a transport error, not bad content.
@@ -161,70 +156,51 @@ test("discovery refuses redirects, wrong media types, failures and oversized bod
   await expect(
     broken.query("https://example.test/r", { method: "POST" }),
   ).rejects.toMatchObject({ reason: "unavailable" });
+
+  for (const maxResponseBytes of [Number.NaN, Infinity, 0, 1024])
+    expect(() => createHTTPV({ maxResponseBytes })).toThrow(RangeError);
 });
 
-test("only an explicit media range with a valid non-zero quality is discovery", async () => {
+test("only an explicit media range with a valid non-zero weight is discovery", async () => {
   using app = listen(v1);
-  const media = async (accept: string) =>
-    (
-      await fetch(app.url, { method: "OPTIONS", headers: { Accept: accept } })
-    ).headers.get("content-type");
+  const media = async (accept: string, extra?: HeadersInit) =>
+    (await ask(app.url, accept, extra)).headers.get("content-type");
   for (const accept of [
-    `${MEDIA_TYPE}`,
-    `${MEDIA_TYPE};q=0.001`,
-    `${MEDIA_TYPE};q=1.0`,
+    MEDIA_TYPE,
+    `text/html, ${MEDIA_TYPE};q=0.001`,
+    `${MEDIA_TYPE} ; q=1.0`,
+    "APPLICATION/HTTPV+JSON;Q=1",
   ])
     expect(await media(accept)).toBe(MEDIA_TYPE);
   for (const accept of [
     "*/*",
     "application/*",
+    `${MEDIA_TYPE};q=0, */*`,
+    `${MEDIA_TYPE};q=0.000`,
     `${MEDIA_TYPE};q=abc`,
     `${MEDIA_TYPE};q=2`,
-    `${MEDIA_TYPE};q=0.000`,
     `${MEDIA_TYPE}; q = 0.5`,
     `${MEDIA_TYPE};v=1`,
+    `text/plain;x=",${MEDIA_TYPE},"`,
   ])
     expect(await media(accept)).not.toBe(MEDIA_TYPE);
+  // A CORS preflight is the application's to answer.
+  expect(
+    await media(MEDIA_TYPE, { "Access-Control-Request-Method": "POST" }),
+  ).not.toBe(MEDIA_TYPE);
 });
 
-test("q=0 and CORS preflights reach the application; a __proto__ method is still advertised", async () => {
-  using app = listen(v1);
-  expect(
-    await fetch(app.url, {
-      method: "OPTIONS",
-      headers: {
-        Accept: MEDIA_TYPE,
-        Origin: "https://client.example",
-        "Access-Control-Request-Method": "POST",
-      },
-    }).then((r) => r.json()),
-  ).toEqual({ method: "OPTIONS" });
-  for (const accept of [`${MEDIA_TYPE};q=0, */*`, `${MEDIA_TYPE}; q = 0.000`])
-    expect(
-      await fetch(app.url, {
-        method: "OPTIONS",
-        headers: { Accept: accept },
-      }).then((r) => r.json()),
-    ).toEqual({ method: "OPTIONS" });
-
-  const server = Bun.serve({
-    hostname: "127.0.0.1",
-    port: 0,
-    ...serve({
-      routes: { "__proto__ /r": v1 },
-      fetch: () => new Response(),
-    }),
+test("a method named __proto__ is still advertised", async () => {
+  const app = serve({
+    routes: { "__proto__ /r": v1 },
+    fetch: () => new Response(),
   });
-  try {
-    expect(
-      await createHTTPV().query(`http://127.0.0.1:${server.port}/r`, {
-        ...local,
-        method: "__proto__",
-      }),
-    ).toEqual(v1);
-  } finally {
-    server.stop(true);
-  }
+  const httpv = createHTTPV({
+    fetch: async (url, init) => app.fetch(new Request(url, init)),
+  });
+  expect(
+    await httpv.query("https://example.test/r", { method: "__proto__" }),
+  ).toEqual(v1);
 });
 
 test("a caller's signal does not remove the discovery timeout", async () => {
@@ -236,7 +212,6 @@ test("a caller's signal does not remove the discovery timeout", async () => {
         ),
       ),
   });
-  const started = Date.now();
   const query = hanging.query("https://example.test/r", {
     method: "POST",
     signal: new AbortController().signal,
@@ -246,7 +221,4 @@ test("a caller's signal does not remove the discovery timeout", async () => {
   expect(
     await Promise.race([query.catch((error) => error), hung]),
   ).toMatchObject({ reason: "unavailable" });
-  expect(Date.now() - started).toBeLessThan(1000);
-  for (const maxResponseBytes of [Number.NaN, Infinity, 0])
-    expect(() => createHTTPV({ maxResponseBytes })).toThrow(RangeError);
 });

@@ -19,9 +19,8 @@ bun install --frozen-lockfile
 bun run check
 ```
 
-The published package depends on the npm `zklean@0.1.0` SDK instead. HTTPV
-imports only the SDK's public exports, so no Rust, SP1, or Lean toolchain is
-needed to run the tests or the example.
+The published package depends on the npm `zklean@0.1.0` SDK instead, whose
+embedded verifier means the tests and the example need only Bun.
 
 ## Current state
 
@@ -30,7 +29,8 @@ current certificate format and are waiting to be re-proved. Until they are:
 
 - `bun run example` blocks all three versions with `unknown (unavailable)`;
 - `tests/groth16.test.ts` is skipped;
-- `bun run check:certificates` and the CI jobs that use the certificates fail;
+- `bun run check:certificates`, `bun scripts/check-package.ts`, and both CI
+  jobs fail (`e2e` at its npm-package step);
 - the certificates' source exports (`*.ndjson`) are not committed yet.
 
 ## Repository layout
@@ -65,16 +65,18 @@ of downloading the certificate's source URL.
 Lean export it was proved from, which the certificate names as its source.
 Review the diff before committing.
 
-With a source-built CLI, prove with ZKLean's released **guest program**, the
-program that checks Lean proofs inside the SP1 proving system, so that the
-proofs verify under the key pinned in the SDK. Set `ZKLEAN_GUEST_ELF` to the
-guest from ZKLean's CI and `ZKLEAN_PROFILE` to its **verifier profile**, the
-JSON naming the guest's SHA-256 and verifying key; the prover refuses to run if
-they disagree. Building the native prover needs Go 1.23 or newer.
+To prove with a source-built CLI, build it with proving enabled as ZKLean's
+`docs/DEVELOPMENT.md` describes, including `--features prover,execute` and
+`scripts/setup-circuits.sh`. Then prove with ZKLean's released **guest
+program**, the program that checks Lean proofs inside the SP1 proving system,
+so that the proofs verify under the key pinned in the SDK: set
+`ZKLEAN_GUEST_ELF` to the guest and `ZKLEAN_PROFILE` to its **verifier
+profile**, the JSON naming the guest's SHA-256 and verifying key. The prover
+refuses to run if they disagree.
 
-With an earlier guest, each of these modules took about two hours and 13 GiB of
-memory to prove on four CPUs. Run one proof at a time, with the settings
-ZKLean's benchmarks use:
+ZKLean has not measured proving for these modules; its smaller benchmark
+workloads took 25 to 56 minutes and peaked near 12.5 GiB. Run one proof at a
+time, with ZKLean's benchmark settings:
 
 ```sh
 RAYON_NUM_THREADS=2 GOMAXPROCS=2 GOMEMLIMIT=6GiB GOGC=20 \

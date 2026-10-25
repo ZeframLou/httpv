@@ -18,7 +18,7 @@ import type {
   WatchOptions,
 } from "./types.ts";
 
-/** A certificate is under 1 KB; an envelope holds one per method. */
+/** Every client accepts responses this large (SPEC 4.3). */
 const MAX_DISCOVERY_BYTES = 64 * 1024;
 
 const positiveInteger = (value: unknown): value is number =>
@@ -26,36 +26,26 @@ const positiveInteger = (value: unknown): value is number =>
 
 /** Plain HTTP is only for a server on this machine. */
 const loopback = (host: string) =>
-  host === "localhost" ||
-  host.endsWith(".localhost") ||
-  host === "[::1]" ||
-  /^127\.\d+\.\d+\.\d+$/.test(host);
+  host === "localhost" || host === "[::1]" || /^127\.\d+\.\d+\.\d+$/.test(host);
 
 /** Read at most `limit` bytes. A failed read is a transport error; content
  * that is too large or not UTF-8 JSON is the server's error. */
 async function readJSON(response: Response, limit: number): Promise<unknown> {
   const chunks: Uint8Array[] = [];
   let size = 0;
-  const reader = response.body?.getReader();
   try {
-    for (
-      let next = await reader?.read();
-      next && !next.done;
-      next = await reader!.read()
-    ) {
-      size += next.value.byteLength;
-      if (size > limit) {
-        await reader!.cancel();
+    for await (const chunk of response.body ?? []) {
+      if ((size += chunk.byteLength) > limit)
         throw new DiscoveryError(
           "invalid-advertisement",
           "discovery response too large",
         );
-      }
-      chunks.push(next.value);
+      chunks.push(chunk);
     }
   } catch (error) {
-    if (error instanceof DiscoveryError) throw error;
-    throw new DiscoveryError("unavailable", String(error));
+    throw error instanceof DiscoveryError
+      ? error
+      : new DiscoveryError("unavailable", String(error));
   }
   try {
     return JSON.parse(
@@ -73,8 +63,10 @@ export function createHTTPV(options: ClientOptions = {}) {
   const transport = options.fetch ?? fetch;
   const { verify } = createVerifier(options);
   const maxBytes = options.maxResponseBytes ?? MAX_DISCOVERY_BYTES;
-  if (!positiveInteger(maxBytes))
-    throw new RangeError("invalid maxResponseBytes");
+  if (!Number.isSafeInteger(maxBytes) || maxBytes < MAX_DISCOVERY_BYTES)
+    throw new RangeError(
+      "maxResponseBytes must be an integer of at least 64 KiB",
+    );
 
   /** Fetch the certificate for one method of a resource. Throws DiscoveryError
    * when discovery fails. */
@@ -82,7 +74,14 @@ export function createHTTPV(options: ClientOptions = {}) {
     url: string,
     { method, allowInsecureHttp, signal, timeout = 10_000 }: QueryOptions,
   ): Promise<Certificate> {
-    const target = new URL(url);
+    let target: URL;
+    let name: string;
+    try {
+      target = new URL(url);
+      name = methodName(method);
+    } catch (error) {
+      throw new DiscoveryError("unavailable", String(error));
+    }
     if (
       target.protocol !== "https:" &&
       !(
@@ -97,7 +96,6 @@ export function createHTTPV(options: ClientOptions = {}) {
       );
     if (target.username || target.password || target.hash)
       throw new DiscoveryError("unavailable", "invalid discovery URL");
-    const name = methodName(method);
     let response: Response;
     try {
       response = await transport(target, {
@@ -118,18 +116,19 @@ export function createHTTPV(options: ClientOptions = {}) {
       ?.split(";")[0]!
       .trim()
       .toLowerCase();
-    const summary = `discovery returned ${response.status} ${type ?? "without a media type"}`;
     if (response.status !== 200 || type !== MEDIA_TYPE) {
       await response.body?.cancel();
-      // Anything but 200 is a server that answered without a certificate,
-      // except a failure status or a 2xx that claims to be one.
+      // The classification table in SPEC 4.3.
       const reason =
         type === MEDIA_TYPE && response.ok
           ? "invalid-advertisement"
           : response.ok || [404, 405, 406, 501].includes(response.status)
             ? "missing-certificate"
             : "unavailable";
-      throw new DiscoveryError(reason, summary);
+      throw new DiscoveryError(
+        reason,
+        `discovery returned ${response.status} ${type ?? "without a media type"}`,
+      );
     }
     return parseDiscovery(await readJSON(response, maxBytes), name);
   }
@@ -193,7 +192,7 @@ export function createHTTPV(options: ClientOptions = {}) {
   function watch(dependency: Dependency, settings: WatchOptions): Monitor {
     dependency = structuredClone(dependency);
     const { interval, timeout = 10_000, onChange } = settings;
-    const maxAge = settings.maxAge ?? interval + timeout;
+    const maxAge = settings.maxAge ?? Math.min(interval + timeout, 0x7fffffff);
     for (const [name, value] of Object.entries({ interval, timeout, maxAge }))
       if (!positiveInteger(value) || value > 0x7fffffff)
         throw new RangeError(`invalid ${name}`);
@@ -228,7 +227,6 @@ export function createHTTPV(options: ClientOptions = {}) {
       })();
       running = work;
       const result = await Promise.race([work, aborted]);
-      if (stopper.signal.aborted) return stopped();
       if (!result || Date.now() - started >= timeout)
         return { status: "unknown", reason: "timeout", checkedAt: started };
       // A result is as old as the request that produced it.
@@ -261,14 +259,17 @@ export function createHTTPV(options: ClientOptions = {}) {
         latest = result;
         clearTimeout(timer);
         clearTimeout(expiry);
-        timer = setTimeout(refresh, interval);
+        // Checks start at a fixed rate, so with the default maxAge a verified
+        // result stays current until the next one arrives.
+        const since = (at: number) =>
+          Math.max(0, latest!.checkedAt! + at - Date.now());
+        timer = setTimeout(refresh, since(interval));
         if (latest.status === "verified")
-          expiry = setTimeout(
-            () => notify(expired()),
-            Math.max(0, latest.checkedAt! + maxAge - Date.now()),
-          );
-        notify(latest);
-        return { ...latest };
+          expiry = setTimeout(() => notify(expired()), since(maxAge));
+        // A result that took longer than maxAge is already expired.
+        const now = current()!;
+        notify(now);
+        return now;
       });
       return inflight;
     };
@@ -289,7 +290,10 @@ export function createHTTPV(options: ClientOptions = {}) {
       clearTimeout(timer);
       clearTimeout(expiry);
     };
-    settings.signal?.addEventListener("abort", stop, { once: true });
+    settings.signal?.addEventListener("abort", stop, {
+      once: true,
+      signal: stopper.signal,
+    });
     if (settings.signal?.aborted) stop();
     void refresh();
 

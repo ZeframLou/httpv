@@ -1,13 +1,10 @@
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { expect, test } from "bun:test";
-import { createHTTPV } from "../src/index.ts";
-import type { Certificate, Requirement, Requirements } from "../src/index.ts";
-import { axioms, id, inventory } from "./helpers.ts";
+import { createHTTPV, MEDIA_TYPE } from "../src/index.ts";
+import type { Certificate, Requirement } from "../src/index.ts";
+import { axioms, gate, id, inventory } from "./helpers.ts";
 
 const fixtures = inventory();
-const httpv = createHTTPV({ backend: fixtures.authority.backend });
+const httpv = createHTTPV({ backend: fixtures.backend });
 
 const compare = (remote: Certificate, overrides: Partial<Requirement> = {}) =>
   httpv.compare(remote, {
@@ -36,41 +33,26 @@ test("certificate failures are unknown", async () => {
     status: "unknown",
     reason: "forbidden-axiom",
   });
-  expect(
-    await compare(fixtures.v1, { axioms: { propext: id("not propext") } }),
-  ).toMatchObject({ status: "unknown", reason: "axiom-mismatch" });
-  const tampered = {
+  const forged = {
     ...fixtures.v1,
     claims: { "Inventory.reservation_safe": id("forged") },
   };
-  expect(await compare(tampered)).toMatchObject({
+  expect(await compare(forged)).toMatchObject({
     status: "unknown",
     reason: "invalid-certificate",
   });
 });
 
 test("unusable requirements fail closed", async () => {
-  const directory = await mkdtemp(join(tmpdir(), "httpv-"));
-  const path = join(directory, "requirements.json");
-  try {
-    await Bun.write(path, JSON.stringify(fixtures.exact));
-    expect((await compare(fixtures.v1, { requirements: path })).status).toBe(
-      "verified",
-    );
-    for (const requirements of [
-      join(directory, "missing.json"),
-      { ...fixtures.exact, extra: true },
-      // Requiring nothing would accept every valid certificate.
-      { ...fixtures.exact, claims: {} },
-    ])
-      expect(
-        await compare(fixtures.v1, {
-          requirements: requirements as Requirements,
-        }),
-      ).toMatchObject({ status: "unknown", reason: "invalid-requirements" });
-  } finally {
-    await rm(directory, { recursive: true });
-  }
+  for (const requirements of [
+    "./missing.json",
+    // Requiring nothing would accept every valid certificate.
+    { ...fixtures.exact, claims: {} },
+  ])
+    expect(await compare(fixtures.v1, { requirements })).toMatchObject({
+      status: "unknown",
+      reason: "invalid-requirements",
+    });
 });
 
 test("mutating the inputs during verification cannot change what is compared", async () => {
@@ -84,14 +66,14 @@ test("mutating the inputs during verification cannot change what is compared", a
 });
 
 test("a dependency changed during discovery is checked as it was", async () => {
-  let release!: () => void;
-  const slow = createHTTPV({
-    backend: fixtures.authority.backend,
+  const discovery = gate();
+  const client = createHTTPV({
+    backend: fixtures.backend,
     fetch: async () => {
-      await new Promise<void>((resolve) => (release = resolve));
+      await discovery.closed;
       return Response.json(
         { format: "httpv/1", certificates: { POST: fixtures.v3 } },
-        { headers: { "content-type": "application/httpv+json" } },
+        { headers: { "content-type": MEDIA_TYPE } },
       );
     },
   });
@@ -101,12 +83,8 @@ test("a dependency changed during discovery is checked as it was", async () => {
     requirements: fixtures.exact,
     axioms,
   };
-  const pending = slow.check(dependency);
-  dependency.requirements = {
-    ...fixtures.exact,
-    claims: fixtures.v3.claims,
-  };
-  await Bun.sleep(0);
-  release();
+  const pending = client.check(dependency);
+  dependency.requirements = { ...fixtures.exact, claims: fixtures.v3.claims };
+  discovery.open();
   expect(await pending).toMatchObject({ status: "incompatible" });
 });

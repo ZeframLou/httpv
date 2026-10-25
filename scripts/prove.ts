@@ -1,5 +1,5 @@
-/** Regenerate the example's requirements and certificates. Each proof takes
- * minutes and writes the certificate beside the export it was proved from. */
+/** Regenerate the example's requirements and certificates. Each proof can take
+ * hours and writes the certificate beside the export it was proved from. */
 import { certificates, requirements, source, sourceURL } from "./models.ts";
 import { runZKLean } from "./zklean.ts";
 

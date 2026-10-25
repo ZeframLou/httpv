@@ -3,7 +3,7 @@
     "target": "ES2022",
     "module": "Preserve",
     "moduleResolution": "Bundler",
-    "lib": ["ES2022", "DOM"],
+    "lib": ["ES2022", "DOM", "DOM.AsyncIterable"],
     "types": ["bun"],
     "strict": true,
     "noUncheckedIndexedAccess": true,

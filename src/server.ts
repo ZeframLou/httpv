@@ -1,33 +1,45 @@
 import { parseCertificate } from "zklean";
-import { MEDIA_TYPE, encodeDiscovery, methodName } from "./protocol.ts";
+import { FORMAT, MEDIA_TYPE, methodName } from "./protocol.ts";
 import type { Certificate, Handler, ServeOptions, Source } from "./types.ts";
 
-/** The HTTPV media type is listed by name, not by a wildcard, with no
- * parameter but an optional weight above zero (RFC 9110, Section 12.4.2). */
+/** Whether `Accept` lists the HTTPV media type by name, not by a wildcard,
+ * with no parameter but an optional weight above zero (RFC 9110, Section
+ * 12.4.2). Commas inside quoted strings do not separate ranges. */
 function acceptsDiscovery(accept: string | null): boolean {
-  return (accept ?? "").split(",").some((range) => {
-    const [type, ...parameters] = range
+  return (accept ?? "").split(/,(?=(?:[^"]*"[^"]*")*[^"]*$)/).some((range) => {
+    const [type, weight, extra] = range
       .split(";")
       .map((part) => part.trim().toLowerCase());
-    if (type !== MEDIA_TYPE || parameters.length > 1) return false;
-    const weight = parameters[0]?.match(/^q=(0(\.\d{0,3})?|1(\.0{0,3})?)$/);
-    return parameters.length === 0 || (!!weight && Number(weight[1]) > 0);
+    if (type !== MEDIA_TYPE || extra !== undefined) return false;
+    const q = weight && /^q=(0(\.\d{0,3})?|1(\.0{0,3})?)$/.exec(weight);
+    return weight === undefined || (!!q && Number(q[1]) > 0);
   });
 }
 
+/** Clients may not dereference a source other than https (SPEC 7.6). */
+function publishable(value: unknown): Certificate {
+  const certificate = parseCertificate(value);
+  if (!certificate.source.startsWith("https://"))
+    throw new Error("a published certificate's source must be https");
+  return certificate;
+}
+
 /** Answer HTTPV discovery and pass every other request to `fetch`, including
- * OPTIONS for a resource without certificates. Paths match the URL parser's
- * normalized path exactly, and the query is ignored. Static certificates are validated at startup; providers
- * run on every discovery request. */
+ * OPTIONS for a path without certificates. Each method maps to its own
+ * certificate, so a change to one endpoint leaves its siblings' clients
+ * undisturbed. Paths are compared as the URL parser normalizes them, without
+ * the query. Static certificates are checked at startup; providers run on
+ * every discovery request. */
 export function serve({ routes, fetch }: ServeOptions): { fetch: Handler } {
   const paths = new Map<string, Map<string, Source>>();
   for (const [route, source] of Object.entries(routes)) {
-    const [method, path, extra] = route.split(" ");
+    const [method, path = "", extra] = route.split(" ");
+    // A path the URL parser would rewrite could never match a request.
     if (
       !method ||
-      !path?.startsWith("/") ||
       extra !== undefined ||
-      /[?#*]/.test(path)
+      path.includes("*") ||
+      new URL(path, "http://host").pathname !== path
     )
       throw new Error(`invalid route: ${route}`);
     const methods = paths.get(path) ?? new Map<string, Source>();
@@ -35,11 +47,10 @@ export function serve({ routes, fetch }: ServeOptions): { fetch: Handler } {
     if (methods.has(name)) throw new Error(`duplicate route: ${route}`);
     methods.set(
       name,
-      typeof source === "function" ? source : parseCertificate(source),
+      typeof source === "function" ? source : publishable(source),
     );
     paths.set(path, methods);
   }
-
   return {
     async fetch(request) {
       // A CORS preflight is the browser asking about a later request, never
@@ -59,14 +70,20 @@ export function serve({ routes, fetch }: ServeOptions): { fetch: Handler } {
             [...methods].map(async ([method, source]) => [
               method,
               typeof source === "function"
-                ? parseCertificate(await source())
+                ? publishable(await source())
                 : source,
             ]),
           ),
         );
-        return Response.json(encodeDiscovery(certificates), {
-          headers: { "Content-Type": MEDIA_TYPE, "Cache-Control": "no-store" },
-        });
+        return Response.json(
+          { format: FORMAT, certificates },
+          {
+            headers: {
+              "Content-Type": MEDIA_TYPE,
+              "Cache-Control": "no-store",
+            },
+          },
+        );
       } catch {
         return new Response(null, {
           status: 503,

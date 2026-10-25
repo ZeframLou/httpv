@@ -1,11 +1,10 @@
 # HTTPV
 
-HTTPV (HTTP Verified) is a protocol and a TypeScript library for Bun. It lets
-an API publish a certificate proving properties of a Lean model of each
-endpoint, and lets clients check that certificate before relying on the
-endpoint. When the API publishes a changed model that your code depends on,
-your client finds out at its next check and can stop sending dependent
-requests, instead of failing in production.
+HTTPV (HTTP Verified) lets your code notice, before it sends a request, that an
+API it depends on no longer promises the behavior your code relies on. It is for teams
+whose code depends on another team's API, and for API teams that want to make
+promises clients can check by machine. HTTPV is a small HTTP protocol and a
+TypeScript library for Bun.
 
 ## Why
 
@@ -17,9 +16,9 @@ are now selling stock that does not exist.
 
 With HTTPV, the service models the endpoint as a function, states its
 guarantee ("a reservation never exceeds available stock") as a mathematical
-statement about that function, proves it, and publishes the certificate next
-to the endpoint. Your client lists the guarantees it relies on and rechecks the
-certificate on a schedule:
+statement about that function, proves it, and publishes the proof next to the
+endpoint. Your client lists the guarantees it relies on and rechecks the proof
+on a schedule:
 
 - If the service adds guarantees without changing the function yours are
   about, the check passes.
@@ -42,9 +41,10 @@ Ordinary requests and responses are unchanged.
   or re-running the Lean proofs. It lists the proved theorems, called
   **claims**, and a short **cryptographic proof** that the checker accepted
   them.
-- Each claim has an **identity**: a hash of its statement and of everything the
-  statement refers to, including the endpoint's function. If the API changes
-  that function or the theorem, the identity changes.
+- Each claim has an **identity**: a hash of its name, its statement, and
+  everything the statement refers to, including the endpoint's function. If the
+  API changes that function or the theorem's statement, the identity changes; a
+  new proof of the same statement does not change it.
 - **Axioms** are statements a proof assumes without proving. Your client lists
   the ones it accepts.
 - Your **requirements** are the claims your code relies on, with their
@@ -70,7 +70,8 @@ second, with no Lean installation on the client.
 ## Trust model
 
 Clients check each certificate's cryptographic proof themselves, trusting only
-ZKLean's pinned verifier and their own reviewed requirements. They still trust
+ZKLean's pinned verifier, their own reviewed requirements, and the axioms they
+accept. They still trust
 the server to run code that behaves as its Lean function describes. HTTPV
 cannot detect a server that misbehaves behind an unchanged certificate, or a
 change between two checks.
@@ -93,6 +94,7 @@ import { serve } from "httpv";
 
 Bun.serve({
   ...serve({
+    // reservations.json is the certificate `zklean prove` wrote.
     routes: { "POST /reservations": await Bun.file("reservations.json").json() },
     fetch: app, // your existing request handler
   }),
@@ -121,10 +123,10 @@ monitor.requireVerified(); // throws unless the latest check passed
 await fetch("https://inventory.example.com/reservations", { method: "POST" });
 ```
 
-[`examples/upgrades.ts`](examples/upgrades.ts) will show a real upgrade:
-version 2 adds a guarantee and passes; version 3 accepts backorders and is
-blocked. Its certificates are being re-proved; until then it blocks all three
-versions.
+[`examples/upgrades.ts`](examples/upgrades.ts) serves three versions of an
+endpoint: version 2 adds a guarantee and should pass; version 3 accepts
+backorders and should be blocked. Its certificates predate the current format,
+so today it reports `unknown (unavailable)` for all three.
 
 The [usage guide](docs/USAGE.md) covers writing requirements, accepting
 axioms, and monitoring. The [protocol specification](SPEC.md) defines the wire

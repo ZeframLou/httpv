@@ -22,9 +22,22 @@ Checking certificates needs only the npm packages.
 
 ## Serve a certificate
 
-Generate each endpoint's certificate with `zklean prove` before deployment.
-Proving runs offline, can take hours, and needs over 12 GiB of memory. A certificate is typically under 1 KB; its size grows with the number
-of claims and axioms, not with the size of the proofs. It holds:
+Generate each endpoint's certificate with `zklean prove` before deployment:
+
+```sh
+zklean prove --project . --module Inventory \
+  --claims Inventory.reservation_safe --axioms propext \
+  --source https://inventory.example.com/reservations.ndjson \
+  --timeout 86400000 --out certs/reservations.json
+```
+
+`--axioms` must list every axiom the proofs use, or `prove` refuses.
+`--timeout` is in milliseconds; the default is one hour. Proving runs offline
+and can take hours; in ZKLean's benchmarks it peaked at about 12.5 GiB of
+memory, so plan for at least 16 GiB.
+
+A certificate is typically under 1 KB; its size grows with the number of claims
+and axioms, not with the size of the proofs. It holds:
 
 - **claims:** the proved theorems, each with its identity;
 - **axioms:** the unproved assumptions the proofs use, with their identities;
@@ -69,9 +82,8 @@ every discovery request:
 "POST /reservations": () => Bun.file("./certs/reservations.json").json(),
 ```
 
-To let browsers on other origins discover certificates, wrap the handler `serve`
-returns: answer preflights for `OPTIONS` with the `Cache-Control` request header
-allowed, and add `Access-Control-Allow-Origin` to discovery responses.
+If the function throws or returns an invalid certificate, the server answers
+`503`, and clients report `unknown / unavailable`.
 
 ## Create a client
 
@@ -136,10 +148,13 @@ await Bun.write("reservations.json", JSON.stringify(certificate));
 
 ```sh
 zklean fetch --certificate reservations.json --out vendor/inventory.ndjson
+zklean requirements --export vendor/inventory.ndjson \
+  --claims Inventory.reservation_safe --out requirements.json
 ```
 
-The export holds compiled declarations, not readable Lean, so review the
-statements in the API's Lean source before requiring them.
+Check first that the certificate's `source` is an `https` URL you expect to
+download. The export holds compiled declarations, not readable Lean, so review
+the statements in the API's Lean source before requiring them.
 
 ## Check an endpoint
 

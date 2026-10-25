@@ -12,13 +12,13 @@ const [v1, v2, v3, requirements] = await Promise.all(
 );
 
 // Supplier: publish the current certificate beside the real endpoint.
-let contract: Certificate = v1;
+let published: Certificate = v1;
 let stock = 3;
 const server = Bun.serve({
   hostname: "127.0.0.1",
   port: 0,
   ...serve({
-    routes: { "POST /units": () => contract },
+    routes: { "POST /units": () => published },
     fetch: () =>
       stock > 0
         ? Response.json({ remaining: --stock }, { status: 201 })
@@ -45,12 +45,14 @@ const versions: [string, Certificate][] = [
   ["V3 accepts backorders", v3],
 ];
 for (const [name, certificate] of versions) {
-  contract = certificate;
+  published = certificate;
   const result = await monitor.refresh();
-  let outcome = "request blocked";
-  if (result.status === "verified") {
+  let outcome: string;
+  try {
     monitor.requireVerified();
     outcome = await fetch(url, { method: "POST" }).then((r) => r.text());
+  } catch {
+    outcome = "request blocked";
   }
   console.log(`${name}: ${result.status} (${result.reason}) -> ${outcome}`);
 }
