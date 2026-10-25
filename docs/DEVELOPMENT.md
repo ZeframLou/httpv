@@ -66,9 +66,9 @@ Proving also needs ZKLean's prover build, the SP1 circuits, and the **guest
 program** that ZKLean's CI uploads as the `zklean-guest-elf` artifact: the
 program that checks Lean proofs inside SP1, so that the proofs verify under the
 key pinned in the SDK. ZKLean's `CONTRIBUTING.md` describes all three; set
-`ZKLEAN_GUEST_ELF` to that guest. Proving takes tens
-of minutes to hours and several GB of memory. Run one proof at a time and bound
-its resources, for example:
+`ZKLEAN_GUEST_ELF` to that guest. Proving takes tens of minutes to hours and
+several GB of memory. Run one proof at a time and bound its resources, for
+example:
 
 ```sh
 RAYON_NUM_THREADS=2 GOMAXPROCS=2 GOMEMLIMIT=6GiB GOGC=20 \

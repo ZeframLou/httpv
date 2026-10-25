@@ -96,9 +96,9 @@ The key is pinned in the SDK, never taken from the API being checked. The
 client needs no native executable, prover, or Lean process.
 
 To use another transport, pass `createHTTPV({ fetch })`; it must not follow
-redirects or relax TLS. To use another verifier, pass `createHTTPV({ backend })`. A backend has an
-`identity` string describing its trusted configuration and an async
-`verify(certificate)` returning a boolean. It is trusted to decide whether the
+redirects or relax TLS. To use another verifier, pass
+`createHTTPV({ backend })`. A backend has an `identity` string describing its
+trusted configuration and an async `verify(certificate)` returning a boolean. It is trusted to decide whether the
 proof establishes the certificate's claims and axioms.
 
 ## Write your requirements
@@ -167,8 +167,9 @@ axioms do.
 
 `unknown` reasons:
 
-- discovery: `unavailable` (network error, timeout, server error, redirect, a
-  URL that is not HTTPS, or an invalid URL or method), `missing-certificate`
+- discovery: `unavailable` (network error, timeout, redirect, an error status
+  other than 404, 405, 406 or 501, a URL that is not HTTPS, or an invalid URL
+  or method), `missing-certificate`
   (no certificate for this method, or a server that does not support HTTPV),
   and `invalid-advertisement` (a malformed discovery response);
 - the certificate: `invalid-certificate`, `forbidden-axiom`, `axiom-mismatch`,

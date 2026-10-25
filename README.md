@@ -125,5 +125,5 @@ so today it reports `unknown (unavailable)` for all three. Run it from a clone
 with `bun run example` ([setup](docs/DEVELOPMENT.md)).
 
 The [usage guide](docs/USAGE.md) covers writing requirements, accepting
-axioms, and rechecking on a schedule. The [protocol specification](SPEC.md) defines the wire
-format for other implementations.
+axioms, and rechecking on a schedule. The [protocol specification](SPEC.md)
+defines the wire format for other implementations.

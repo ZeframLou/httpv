@@ -165,7 +165,7 @@ test("responses are classified as SPEC 3.3 says", async () => {
   const shouted = createHTTPV({
     fetch: async () =>
       Response.json(envelope, {
-        headers: { "content-type": "Application/HTTPV+JSON; charset=utf-8" },
+        headers: { "content-type": "Application/HTTPV+JSON ; charset=utf-8" },
       }),
   });
   expect(
@@ -255,7 +255,13 @@ test("the media type must be listed, and not declined with weight 0", async () =
 
 test("standard methods are case-insensitive, extension methods are not", async () => {
   const app = serve({
-    routes: { "GET /r": v1, "PATCH /r": v3, "__proto__ /r": v1 },
+    routes: {
+      "GET /r": v1,
+      "DELETE /r": v1,
+      "HEAD /r": v1,
+      "PATCH /r": v3,
+      "__proto__ /r": v1,
+    },
     fetch: () => new Response(),
   });
   const httpv = createHTTPV({
@@ -263,7 +269,8 @@ test("standard methods are case-insensitive, extension methods are not", async (
   });
   const query = (method: string) =>
     httpv.query("https://example.test/r", { method });
-  expect(await query("get")).toEqual(v1);
+  for (const method of ["get", "delete", "head"])
+    expect(await query(method)).toEqual(v1);
   expect(await query("PATCH")).toEqual(v3);
   await expect(query("patch")).rejects.toMatchObject({
     reason: "missing-certificate",
