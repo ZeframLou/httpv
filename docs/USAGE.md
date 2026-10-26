@@ -7,8 +7,9 @@ This guide is for two teams:
 - **Client teams** check those certificates before relying on an endpoint, and
   stop sending dependent requests when a promise they rely on changes.
 
-The [README](../README.md#concepts) defines the terms used here: Lean, ZKLean,
-certificates, claims, identities, axioms and requirements.
+The [README](../README.md) explains what HTTPV is for, and its
+[Concepts](../README.md#concepts) define the terms used here: certificates,
+claims, identities, requirements and axioms.
 
 ## Install
 
