@@ -19,16 +19,6 @@ bun run check
 only Bun: ZKLean's package verifies certificates without native tools. Run
 `bun run format` before committing; CI also runs `bun run format:check`.
 
-## Current state
-
-The example certificates in `examples/inventory/certificates` predate the
-current certificate format and are waiting to be re-proved. Until they are:
-
-- `bun run example` blocks all three versions with `unknown (unavailable)`;
-- `tests/groth16.test.ts` is skipped;
-- `bun run check:certificates` and CI's `formal-artifacts` job fail;
-- the certificates' source exports (`*.ndjson`) are not committed yet.
-
 ## Repository layout
 
 - `src/`: the library. `server.ts` answers discovery, `client.ts` fetches and
