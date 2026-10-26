@@ -71,8 +71,9 @@ examples peaked at 19 GB:
 RAYON_NUM_THREADS=6 GOMAXPROCS=2 GOMEMLIMIT=6GiB GOGC=20 bun run prove
 ```
 
-Each proof times out after ZKLean's default of one hour; set
-`ZKLEAN_PROVE_TIMEOUT` in milliseconds to change it.
+Each proof times out after ZKLean's default of one hour. To change it, set
+`ZKLEAN_PROVE_TIMEOUT` in milliseconds; `bun run prove` passes it to ZKLean's
+`--timeout`.
 
 Review the diff before committing.
 
@@ -86,16 +87,16 @@ it.
 
 ## Release
 
-1. Regenerate the example's artifacts on the commit to be released, and commit
-   the certificates and their exports.
-2. Tag that commit with the `version` in `package.json`, such as `v0.1.0`, and
-   push the tag. Each certificate names its export at that tag, so clients can
-   fetch its definitions only once the tag exists.
+1. Regenerate the example's artifacts, run `bun run check` and
+   `bun run check:certificates`, and commit the certificates and their exports.
+2. Tag the commit with the regenerated artifacts with the `version` in
+   `package.json`, such as `v0.1.0`, and push the tag. Each certificate names
+   its export at that tag, so clients can fetch its definitions only once the
+   tag exists.
 3. After ZKLean's package is published to npm, publish HTTPV from an npm
    account that owns the `httpv` package:
 
    ```sh
-   bun run check
    npm pack --dry-run  # lists the files that will be published
    npm publish
    ```

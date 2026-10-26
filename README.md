@@ -62,12 +62,10 @@ Ordinary requests and responses are unchanged.
     certificate          ──▶                                     3. call, or block
 ```
 
-The API author proves once per release, offline, typically in 5 to 15 minutes.
-The
-server answers an HTTP `OPTIONS` request to the endpoint's own URL with the
-endpoint's certificate, and also publishes one file of the Lean definitions
-behind it. A certificate is typically under 1 KB and verifies in the client
-without a Lean installation.
+The API author proves once per release, offline: about 5 to 15 minutes for a
+small model. The server answers an HTTP `OPTIONS` request to the endpoint's own
+URL with the endpoint's certificate, typically under 1 KB, and also publishes
+one file of the Lean definitions behind it.
 
 ## Trust model
 
@@ -80,13 +78,12 @@ checks.
 
 ## Get started
 
-Install HTTPV with the ZKLean SDK it builds on:
+HTTPV runs on [Bun](https://bun.sh/) 1.4.4 or newer. Install it with the ZKLean
+SDK it builds on:
 
 ```sh
 bun add zklean@0.1.0 httpv@0.1.0
 ```
-
-HTTPV runs on [Bun](https://bun.sh/) 1.4.4 or newer.
 
 **Server:** serve each endpoint's certificate alongside your existing handler.
 

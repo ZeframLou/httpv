@@ -31,14 +31,14 @@ and only when, they appear in all capitals, as shown here.
 "Resource", "target URI", "method" and "origin server" are used as in HTTP
 Semantics [RFC9110]. ZKLean [ZKLEAN] checks Lean [LEAN] proofs inside the SP1
 zero-knowledge virtual machine [SP1] and summarizes the result as a short
-Groth16 [GROTH16] proof. "Certificate", "claim", "axiom", "identity",
-"statement identity" and "requirements" are as in ZKLean:
+Groth16 [GROTH16] proof. "Certificate", "claim", "axiom", "identity" and
+"requirements" are as in ZKLean:
 
 - a **certificate** names its proved claims and the axioms they use, each with
   an **identity** that covers its name, its statement and everything the
   statement refers to, but not its proof;
-- the **statement identity** identifies a certificate's claims and axioms
-  together;
+- the **statement identity**, the identity ZKLean gives a certificate's claims
+  and axioms together;
 - **requirements** list claims, with identities, that a certificate must
   prove.
 
@@ -141,10 +141,12 @@ labeled `application/httpv+json`.
 
 ### 3.3. Client processing
 
-A client MUST accept up to 64 KiB of decoded content and MUST bound what it
-reads. It classifies the response by the first matching row. Every outcome but
-the last makes the result `unknown` (Section 4), with the outcome as its
-reason.
+A response is **labeled** `application/httpv+json` when its `Content-Type`
+media type, compared case-insensitively and ignoring parameters, is
+`application/httpv+json`. A client MUST accept up to 64 KiB of decoded content
+and MUST bound what it reads. It classifies the response by the first matching
+row. Every outcome but the last makes the result `unknown` (Section 4), with
+the outcome as its reason.
 
 | Response                                                                      | Outcome                 |
 | ----------------------------------------------------------------------------- | ----------------------- |

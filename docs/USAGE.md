@@ -20,19 +20,18 @@ Writing certificates and requirements also needs the ZKLean command-line tool,
 which checks Lean proofs and generates certificates from them. Install it as
 ZKLean's guide describes in
 [Set up](https://github.com/ZeframLou/zklean/blob/v0.1.0/docs/USAGE.md#set-up);
-this guide writes it as `zklean`. Lean projects must select
-`leanprover/lean4:v4.35.0` in their `lean-toolchain` file. Checking
-certificates needs only the packages.
+this guide writes it as `zklean`. Checking certificates needs only the
+packages.
 
 ## For API teams
 
 ### Model the endpoint in Lean
 
 Write the endpoint's behavior as a Lean function, and prove theorems about it
-that clients can rely on. Create a Lean project with
-`lake new inventory lib`, set its `lean-toolchain` to
-`leanprover/lean4:v4.35.0`, and replace `Inventory.lean` with the model. A
-reservation endpoint might be:
+that clients can rely on. Create a project with Lake, Lean's build tool:
+`lake new inventory lib`. Set the Lean version in its `lean-toolchain` file to
+`leanprover/lean4:v4.35.0`, the version ZKLean requires, and replace
+`Inventory.lean` with the model. A reservation endpoint might be:
 
 ```lean
 namespace Inventory
@@ -57,9 +56,21 @@ complete project, under other names, with three versions of an endpoint.
 
 ### Generate the certificate
 
-First run `zklean check` with the same `--project`, `--module`, `--claims` and
-`--axioms` flags: it checks the proofs in seconds and lists the axioms they
-use. Then prove the theorems into a certificate before deployment:
+First check the proofs, which takes seconds:
+
+```sh
+zklean check --project . --module Inventory \
+  --claims Inventory.reservation_safe --axioms propext
+```
+
+`--axioms` names the axioms the proofs may use; `check` fails with
+`forbidden-axiom` if they use another. To see which they use, add
+`#print axioms Inventory.reservation_safe` to the Lean file.
+
+Proving takes about 5 to 15 minutes and up to 20 GB of memory on a 12-core
+machine, and the first proof downloads 6.2 GB of proving files. It needs the
+prover setup in ZKLean's guide. Prove the theorems into a certificate before
+deployment:
 
 ```sh
 zklean prove --project . --module Inventory \
@@ -69,7 +80,7 @@ zklean prove --project . --module Inventory \
 ```
 
 - `--claims` names the theorems the certificate proves.
-- `--axioms` must list every axiom the proofs use, or `prove` refuses.
+- `--axioms` is as for `check`.
 - `--source` is the URL where you will publish the **export**: a file of
   Lean's compiled form of the definitions behind the claims, from which anyone
   can recompute the claims' identities. `prove` writes it beside the
@@ -85,10 +96,7 @@ zklean export --project . --module InventorySpec \
   --claims Inventory.reservation_safe --out certs/reservations.ndjson
 ```
 
-Proving takes about 5 to 15 minutes and up to 20 GB of memory on a 12-core
-machine, and the first proof downloads 6.2 GB of proving files. It needs the
-prover setup in ZKLean's guide. A certificate is typically under 1 KB, whatever
-the size of the proofs.
+A certificate is typically under 1 KB, whatever the size of the proofs.
 
 ### Serve the certificate
 
@@ -140,7 +148,7 @@ in a JSON file:
 ```json
 {
   "format": "zklean/requirements/1",
-  "claims": { "Inventory.reservation_safe": "56b0…" }
+  "claims": { "Inventory.reservation_safe": "80f5…" }
 }
 ```
 
@@ -170,6 +178,10 @@ in a JSON file:
      --claims Inventory.reservation_safe --out requirements.json
    ```
 
+   With `--export checked.ndjson` in place of `--project` and `--module`, the
+   same command uses the export checked in step 1 instead of building the
+   project.
+
    This builds the project with Lake, Lean's build tool, which runs the
    project's build code, so review or sandbox third-party projects first.
 
@@ -192,8 +204,8 @@ export const httpv = createHTTPV();
 ```
 
 The client verifies certificates itself, with ZKLean's built-in verifier. That
-verifier uses a **verifier key**: a public key, fixed in the ZKLean package,
-that identifies ZKLean's proof checker. A certificate that verifies under it
+verifier uses a **verifier key**: a fingerprint, fixed in the ZKLean package,
+of ZKLean's proof-checking program. A certificate that verifies under it
 was produced by that checker. The key never comes from the API being checked,
 and the client needs no Lean installation or other native tools.
 
