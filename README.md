@@ -1,7 +1,7 @@
 # HTTPV
 
-**Know that an API broke the promise your code depends on, before your next
-request.**
+**Know when an API stops guaranteeing what your code depends on, before a bad
+request goes through.**
 
 HTTPV is an HTTP protocol and TypeScript library for Bun. API teams publish
 machine-checkable proofs of how their endpoints behave. Client teams check those
@@ -35,8 +35,8 @@ certificate on a schedule:
   block the request, switch provider or alert someone before a bad order goes
   through.
 
-Any change to the function, even a refactor, waits for your team's approval, so
-nothing changes under you unseen.
+Any change to the function, even a refactor, fails your check until your team
+reviews it and updates its requirements, so nothing changes under you unseen.
 
 ## See it work
 
@@ -54,21 +54,6 @@ V3 accepts backorders: incompatible (requirements-not-met) -> request blocked
 Version 2 adds a guarantee and still passes. Version 3 starts accepting
 backorders, so the client blocks it.
 
-## Concepts
-
-- **Certificate:** what [ZKLean](https://github.com/ZeframLou/zklean), the
-  proving tool HTTPV builds on, produces. It lists the proved theorems, called
-  **claims**, with a small cryptographic receipt showing that ZKLean's Lean
-  checker accepted their proofs. Anyone can check the receipt without seeing
-  the proofs.
-- **Identity:** a fingerprint of a claim and the code it is about. Change
-  either and the identity changes; re-proving the same thing doesn't.
-- **Requirements:** the claims your code relies on, with their identities. A
-  check passes only if the certificate proves all of them.
-- **Axioms:** statements a proof assumes without proving. A false axiom can
-  prove anything, so your client accepts only the ones it lists, normally
-  Lean's three standard axioms (`standardAxioms`).
-
 ## How it works
 
 ```text
@@ -80,7 +65,9 @@ backorders, so the client blocks it.
     certificate          ──▶                                     3. call, or block
 ```
 
-1. The API author proves the guarantees once per release with ZKLean: about 5 to
+1. The API author proves the guarantees once per release with
+   [ZKLean](https://github.com/ZeframLou/zklean), the proving tool HTTPV builds
+   on: about 5 to
    15 minutes for a small model. The result is a certificate, typically under 1
    KB.
 2. The server answers an HTTP `OPTIONS` request to the endpoint's own URL with
@@ -89,6 +76,19 @@ backorders, so the client blocks it.
 3. The client verifies the certificate in under a second, without Lean
    installed, and checks that it still proves every guarantee the client
    relies on.
+
+## Concepts
+
+- **Certificate:** a small file that lists proved theorems, called **claims**,
+  with a cryptographic receipt that ZKLean's Lean checker accepted the proofs.
+  Anyone can check the receipt without the proofs or Lean.
+- **Identity:** a fingerprint of a claim and the code it is about. Change
+  either and the identity changes; re-proving the same thing doesn't.
+- **Requirements:** the claims your code relies on, with their identities. A
+  check passes only if the certificate proves all of them.
+- **Axioms:** statements a proof assumes without proving. A false axiom can
+  prove anything, so your client accepts only the ones it lists, normally
+  Lean's three standard axioms (`standardAxioms`).
 
 ## Get started
 

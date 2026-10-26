@@ -89,11 +89,10 @@ zklean prove --project . --module Inventory \
 
 - `--claims` names the theorems the certificate proves.
 - `--axioms` is as for `check`.
-- `--source` is the URL where you will publish the **export**: a file of
-  Lean's compiled form of the definitions behind the claims, from which anyone
-  can recompute the claims' identities. `prove` writes it beside the
-  certificate, as `certs/reservations.ndjson`; publish it at exactly that
-  `https` URL, served directly with no redirect, for example as a static file.
+- `--source` is the `https` URL where you will publish the **export**, the
+  definitions behind the claims, from which anyone can recompute their
+  identities. `prove` writes it to `certs/reservations.ndjson`. Serve it at
+  exactly that URL, with no redirect.
 
 ### Serve the certificate
 
@@ -115,11 +114,12 @@ Bun.serve({
 ```
 
 Clients fetch a certificate with **discovery**: an `OPTIONS` request to the
-endpoint's URL that asks for `application/httpv+json`. `serve` answers those
-and passes every other request to your handler, including `OPTIONS` for paths
-without certificates and browser CORS preflight requests. Paths match exactly
-and the query is ignored. `serve` throws at startup if a static certificate is
-malformed; it does not verify proofs.
+endpoint's URL that asks for `application/httpv+json`.
+
+`serve` answers discovery and passes every other request to your handler,
+including `OPTIONS` for paths without certificates and browser CORS preflight
+requests. Paths match exactly and the query is ignored. `serve` throws at
+startup if a static certificate is malformed; it does not verify proofs.
 
 Give each endpoint its own certificate, with claims about that endpoint only,
 so changing one endpoint never affects clients of another.
@@ -150,13 +150,15 @@ in a JSON file:
 }
 ```
 
+`zklean` builds the API's project with Lake, which runs its build code, so
+sandbox third-party projects.
+
 1. Get the API's Lean project from its team into `vendor/inventory`, and review
    the theorems your code relies on. Make sure they are about the function the
-   endpoint implements. To confirm the project is the one certified, save the
-   endpoint's certificate and check the project's export against it. The
-   `zklean` commands build the project with Lake, which runs its build code, so
-   review or sandbox a third-party project first. Run this in your client
-   project, where `httpv` is installed:
+   endpoint implements.
+2. Confirm it is the certified project: save the endpoint's certificate and
+   check the project's export against it. Run this in your client project,
+   where `httpv` is installed:
 
    ```sh
    bun -e 'import { createHTTPV } from "httpv";
@@ -173,7 +175,7 @@ in a JSON file:
    `fetch` fails, listing the mismatches, unless the project reproduces the
    identity of every claim and every non-standard axiom in the certificate.
 
-2. Generate requirements from that project, naming those theorems:
+3. Generate requirements from that project, naming those theorems:
 
    ```sh
    zklean requirements --project vendor/inventory --module Inventory \
@@ -181,14 +183,14 @@ in a JSON file:
    ```
 
    With `--export checked.ndjson` in place of `--project` and `--module`, the
-   same command uses the export checked in step 1 instead of building the
+   same command uses the export checked in step 2 instead of building the
    project.
 
-3. Commit `requirements.json`.
+4. Commit `requirements.json`.
 
-You don't need the API's whole project. Your own module can restate the claims
-as `axiom`s over the same definitions, because an identity covers the statement,
-not the proof. If your code needs a weaker property
+You don't need the API's whole project. An identity covers a claim's statement,
+not its proof, so your own module can restate the claims as `axiom`s over the
+same definitions. If your code needs a weaker property
 than the API certifies, prove it from the API's claims in your own Lean code
 and require the API's claims.
 
@@ -271,8 +273,7 @@ not compare certificate bytes, which can change without the claims changing.
 ### Recheck on a schedule
 
 APIs change without telling their clients, so recheck on an interval and send
-dependent requests only while the latest result is `verified`. This is
-application code, not part of HTTPV:
+dependent requests only while the latest result is `verified`. A minimal loop:
 
 ```ts
 let latest = await httpv.check(inventory);
