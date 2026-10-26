@@ -4,8 +4,9 @@
 request goes through.**
 
 HTTPV is an HTTP protocol and TypeScript library for Bun. API teams publish
-machine-checkable proofs of how their endpoints behave. Client teams check those
-proofs with one function call, in under a second, with nothing extra to install.
+machine-checkable proofs of how their endpoints behave. Client teams review a
+guarantee once and pin it; after that they check each proof with one function
+call, in under a second, with no Lean installed.
 Ordinary requests and responses are unchanged.
 
 API teams get a contract clients can verify, so a breaking change shows up in
@@ -25,7 +26,8 @@ that doesn't exist, and nothing tells you.
 With HTTPV, the inventory team models the endpoint as a small function in Lean,
 a language for writing machine-checked proofs. It proves "a reservation never
 exceeds available stock" and publishes a certificate of that proof next to the
-endpoint. Your client names the guarantees it relies on and rechecks the
+endpoint. Your team reviews that theorem once, in Lean, and pins its
+fingerprint with `zklean requirements`. Your client then rechecks the
 certificate on a schedule:
 
 - **They add a guarantee:** the check still passes.
