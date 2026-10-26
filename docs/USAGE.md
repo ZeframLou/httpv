@@ -37,7 +37,7 @@ cd inventory
 echo leanprover/lean4:v4.35.0 > lean-toolchain
 ```
 
-Put the model in `Inventory/Basic.lean`, replacing its contents:
+Replace the contents of `Inventory.lean` with the model and its theorems:
 
 ```lean
 namespace Inventory
@@ -46,20 +46,13 @@ namespace Inventory
 def reserve (stock quantity : Nat) : Option Nat :=
   if quantity ≤ stock then some (stock - quantity) else none
 
-end Inventory
-```
-
-Put the theorems in `Inventory.lean`, replacing its contents:
-
-```lean
-import Inventory.Basic
-
 /-- An accepted reservation never exceeds the available stock. -/
-theorem Inventory.reservation_safe (stock quantity remaining : Nat)
-    (accepted : Inventory.reserve stock quantity = some remaining) :
-    quantity ≤ stock := by
-  unfold Inventory.reserve at accepted
+theorem reservation_safe (stock quantity remaining : Nat)
+    (accepted : reserve stock quantity = some remaining) : quantity ≤ stock := by
+  unfold reserve at accepted
   split at accepted <;> simp_all
+
+end Inventory
 ```
 
 Your server's code must behave as this function does; HTTPV certifies the
@@ -102,27 +95,6 @@ zklean prove --project . --module Inventory \
   can recompute the claims' identities. `prove` writes it beside the
   certificate, as `certs/reservations.ndjson`; publish it at exactly that
   `https` URL, served directly with no redirect, for example as a static file.
-
-The export also contains your proofs. To keep them private, state each claim as
-an `axiom` in a module that imports only the model, such as
-`Inventory/Spec.lean`:
-
-```lean
-import Inventory.Basic
-
-/-- The claim, stated without its proof. -/
-axiom Inventory.reservation_safe (stock quantity remaining : Nat)
-    (accepted : Inventory.reserve stock quantity = some remaining) :
-    quantity ≤ stock
-```
-
-A claim stated as an axiom has the same identity as the proved theorem, so
-publish this module's export instead:
-
-```sh
-zklean export --project . --module Inventory.Spec \
-  --claims Inventory.reservation_safe --out certs/reservations.ndjson
-```
 
 ### Serve the certificate
 
@@ -181,11 +153,8 @@ in a JSON file:
 
 1. Get the API's Lean project from its team into `vendor/inventory`, and review
    the theorems your code relies on. Make sure they are about the function the
-   endpoint implements. If the team keeps its proofs private, it can share a
-   project with only the model and the claims module, such as
-   `Inventory/Basic.lean` and `Inventory/Spec.lean`; use `Inventory.Spec` in
-   place of `Inventory` below. To confirm the project is the one certified, save
-   the endpoint's certificate and check the project's export against it. The
+   endpoint implements. To confirm the project is the one certified, save the
+   endpoint's certificate and check the project's export against it. The
    `zklean` commands build the project with Lake, which runs its build code, so
    review or sandbox a third-party project first. Run this in your client
    project, where `httpv` is installed:
