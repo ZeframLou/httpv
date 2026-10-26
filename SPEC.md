@@ -39,8 +39,8 @@ Groth16 [GROTH16] proof. "Certificate", "claim", "axiom", "identity" and
   statement refers to, but not its proof;
 - the **statement digest** [ZKLEAN, Section 3.4] is the hash of a certificate's
   `format`, `claims` and `axioms`;
-- **requirements** list claims, with identities, that a certificate must
-  prove;
+- **requirements** [ZKLEAN, Section 4] list claims, with identities, that a
+  certificate must prove;
 - a certificate's **source** is the URL of its export, the file of Lean
   declarations its identities are computed from.
 
@@ -90,8 +90,8 @@ Cache-Control: no-cache
 
 A client MUST send `OPTIONS` to the endpoint's target URI with an `Accept`
 header field listing `application/httpv+json`. It MUST use `https`, except that
-it MAY use `http` to `localhost` or a
-loopback address [RFC6761] when the user allows it. The target URI MUST NOT
+it MAY use `http` to `localhost` [RFC6761] or a loopback address
+(`127.0.0.0/8` or `::1`) when the user allows it. The target URI MUST NOT
 contain userinfo or a fragment [RFC3986]. The client SHOULD send
 `Cache-Control: no-cache` [RFC9111], for intermediaries that cache `OPTIONS`
 despite [RFC9110], and MUST NOT follow redirects.
@@ -131,11 +131,14 @@ SHOULD stay under 64 KiB and SHOULD carry `Cache-Control: no-store`:
 }
 ```
 
-The object has exactly the members `format` (`"httpv/1"`) and `certificates`,
-which maps each method token [RFC9110, Section 9.1] to that endpoint's
-certificate. Method names are case-sensitive; because Fetch [FETCH] uppercases
-`DELETE`, `GET`, `HEAD`, `OPTIONS`, `POST` and `PUT`, servers MUST write those
-six in uppercase, and clients MUST uppercase them before lookup.
+The object has exactly the members `format` (`"httpv/1"`) and `certificates`, a
+JSON object that maps each method token [RFC9110, Section 9.1] to that
+endpoint's certificate. A client reads only the member for its endpoint's
+method and ignores the others, whatever they contain. Method names are
+case-sensitive, but Fetch [FETCH] uppercases `DELETE`, `GET`, `HEAD`,
+`OPTIONS`, `POST` and `PUT`, so servers MUST write those six in uppercase, and a
+client whose method matches one of them, ignoring case, MUST look it up in
+uppercase.
 
 A server SHOULD give each endpoint a certificate about that endpoint only, so a
 change to one endpoint does not disturb clients of another. If it cannot

@@ -90,13 +90,14 @@ it.
 
 ## Release
 
-1. Regenerate the example's artifacts, run `bun run check` and
+1. Set `version` in `package.json`; `bun run prove` writes it into each
+   certificate's source URL.
+2. Regenerate the example's artifacts, run `bun run check` and
    `bun run check:certificates`, and commit the certificates and their exports.
-2. Tag that commit `v` followed by the `version` in `package.json`, such as
-   `v0.1.0`, and push the tag. Each certificate names
-   its export at that tag, so clients can fetch its definitions only once the
-   tag exists.
-3. Once the matching `zklean` version is on npm, publish HTTPV from an npm
+3. Tag that commit `v` followed by the `version` in `package.json`, such as
+   `v0.1.0`, and push the tag. Each certificate names its export at that tag, so
+   clients can fetch its definitions only once the tag exists.
+4. Once the matching `zklean` version is on npm, publish HTTPV from an npm
    account that owns the `httpv` package:
 
    ```sh

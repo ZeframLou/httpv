@@ -81,10 +81,11 @@ axiom, if they use another.
 
 Proving takes about 5 to 15 minutes and up to 20 GB of memory on a 12-core
 machine, and the first proof downloads 6.2 GB of proving files. It needs the
-prover build and `ZKLEAN_GUEST_ELF` from ZKLean's
+prover build (the native tool built with SP1's prover) and `ZKLEAN_GUEST_ELF`
+from ZKLean's
 [Set up](https://github.com/ZeframLou/zklean/blob/v0.1.0/docs/USAGE.md#set-up),
-which needs Go 1.24, `protoc` and a C compiler. Prove the theorems into a
-certificate before deployment:
+which needs Go 1.24, `protoc` and a C compiler. Prove the theorems into a certificate
+before deployment:
 
 ```sh
 zklean prove --project . --module Inventory \
@@ -180,11 +181,12 @@ in a JSON file:
 1. Get the API's Lean project from its team into `vendor/inventory`, and review
    the theorems your code relies on. Make sure they are about the function the
    endpoint implements. If the team keeps its proofs private, it can share a
-   project with only the claims module, such as `Inventory.Spec`; use that
-   module in place of `Inventory` below. To confirm the project is the one
-   certified, save the endpoint's certificate and check the project's export
-   against it. The `zklean` commands build the project with Lake, which runs its
-   build code, so review or sandbox a third-party project first:
+   project with only the model and the claims module, such as
+   `Inventory/Basic.lean` and `Inventory/Spec.lean`; use `Inventory.Spec` in
+   place of `Inventory` below. To confirm the project is the one certified, save
+   the endpoint's certificate and check the project's export against it. The
+   `zklean` commands build the project with Lake, which runs its build code, so
+   review or sandbox a third-party project first:
 
    ```sh
    bun -e 'import { createHTTPV } from "httpv";
