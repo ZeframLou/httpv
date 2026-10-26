@@ -5,7 +5,8 @@ request.**
 
 HTTPV is an HTTP protocol and TypeScript library for Bun. API teams publish
 machine-checkable proofs of how their endpoints behave. Client teams check
-those proofs with one function call, in under a second, with no Lean needed.
+those proofs with one function call, in under a second, with nothing extra to
+install.
 Ordinary requests and responses are unchanged.
 
 - **Client teams** stop calling an API as soon as their next check finds it no
@@ -13,8 +14,8 @@ Ordinary requests and responses are unchanged.
 - **API teams** get a contract clients can verify, so a breaking change shows
   up in review instead of in a customer's incident.
 
-It works with APIs whose team publishes proofs, so it suits internal services
-and partner APIs first.
+The API team must publish proofs, so HTTPV fits internal services and partner
+APIs.
 
 ## Why
 
@@ -35,10 +36,8 @@ certificate on a schedule:
   block the request, switch provider or alert someone before a bad order goes
   through.
 
-Any change to the function, even a refactor, fails the check until your team
-reviews and accepts it, so nothing changes under you unseen. The proof covers
-the Lean model, and the API team keeps the model in step with its code, as it
-does its tests.
+Any change to the function, even a refactor, waits for your team's approval, so
+nothing changes under you unseen.
 
 ## See it work
 
@@ -56,6 +55,21 @@ V3 accepts backorders: incompatible (requirements-not-met) -> request blocked
 Version 2 adds a guarantee and still passes. Version 3 starts accepting
 backorders, so the client blocks it.
 
+## Concepts
+
+- **Certificate:** what [ZKLean](https://github.com/ZeframLou/zklean), the
+  proving tool HTTPV builds on, produces. It lists the proved theorems, called
+  **claims**, with a small cryptographic receipt showing that ZKLean's Lean
+  checker accepted their proofs. Anyone can check the receipt without seeing
+  the proofs.
+- **Identity:** a fingerprint of a claim and the code it is about. Change
+  either and the identity changes; re-proving the same thing doesn't.
+- **Requirements:** the claims your code relies on, with their identities. A
+  check passes only if the certificate proves all of them.
+- **Axioms:** statements a proof assumes without proving. A false axiom can
+  prove anything, so your client accepts only the ones it lists, normally
+  Lean's three standard axioms (`standardAxioms`).
+
 ## How it works
 
 ```text
@@ -67,12 +81,12 @@ backorders, so the client blocks it.
     certificate          ──▶                                     3. call, or block
 ```
 
-1. The API author proves the guarantees once per release with
-   [ZKLean](https://github.com/ZeframLou/zklean): about 5 to 15 minutes for a
-   small model. The result is a certificate, typically under 1 KB.
+1. The API author proves the guarantees once per release with ZKLean: about 5 to
+   15 minutes for a small model. The result is a certificate, typically under 1
+   KB.
 2. The server answers an HTTP `OPTIONS` request to the endpoint's own URL with
-   that certificate. It also publishes, as one file, the Lean definitions the
-   certificate describes.
+   that certificate. It also publishes the certificate's Lean definitions as a
+   single file.
 3. The client verifies the certificate in under a second, without Lean
    installed, and checks that it still proves every guarantee the client
    relies on.
@@ -112,7 +126,7 @@ const result = await createHTTPV().check({
   url: "https://inventory.example.com/reservations",
   method: "POST",
   requirements: "./requirements.json", // the guarantees you rely on
-  axioms: standardAxioms, // the assumptions you accept; see Concepts
+  axioms: standardAxioms, // the assumptions you accept
 });
 if (result.status === "verified")
   await fetch("https://inventory.example.com/reservations", {
@@ -126,19 +140,6 @@ The [usage guide](docs/USAGE.md) walks both teams through it: writing the Lean
 model, generating `requirements.json`, and rechecking on a schedule. The
 [protocol specification](SPEC.md) defines the wire format for other
 implementations.
-
-## Concepts
-
-- **Certificate:** what ZKLean produces. It lists the proved theorems, called
-  **claims**, with a short cryptographic proof that ZKLean's independent Lean
-  checker accepted them. Anyone can verify that proof without the Lean proofs.
-- **Identity:** a fingerprint of a claim and the code it is about. Change
-  either and the identity changes; re-proving the same thing doesn't.
-- **Requirements:** the claims your code relies on, with their identities. A
-  check passes only if the certificate proves all of them.
-- **Axioms:** statements a proof assumes without proving. A false axiom can
-  prove anything, so your client accepts only the ones it lists, normally
-  Lean's three standard axioms (`standardAxioms`).
 
 ## Trust model
 

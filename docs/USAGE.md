@@ -74,13 +74,11 @@ zklean check --project . --module Inventory \
 axiom, if they use another.
 
 Proving takes about 5 to 15 minutes and up to 20 GB of memory on a 12-core
-machine, and the first proof downloads 6.2 GB of proving files. It needs the
-prover build (the native tool built with the prover of SP1, the proving system
-ZKLean uses) and `ZKLEAN_GUEST_ELF`, the path to ZKLean's downloaded checker
-program, both from ZKLean's
-[Set up](https://github.com/ZeframLou/zklean/blob/v0.1.0/docs/USAGE.md#set-up),
-which needs Go 1.24, `protoc` and a C compiler. Prove the theorems into a
-certificate before deployment:
+machine. The first proof downloads 6.2 GB of proving files. You need ZKLean's
+prover build and `ZKLEAN_GUEST_ELF`, the path to its checker program; ZKLean's
+[Set up](https://github.com/ZeframLou/zklean/blob/v0.1.0/docs/USAGE.md#set-up)
+covers both, and needs Go 1.24, `protoc` and a C compiler. Then prove the
+theorems into a certificate before deployment:
 
 ```sh
 zklean prove --project . --module Inventory \
@@ -188,9 +186,9 @@ in a JSON file:
 
 3. Commit `requirements.json`.
 
-Instead of the API's project, you can write your own module that states the
-claims as `axiom`s about identical definitions: a claim's identity covers its
-statement and definitions, not its proof. If your code needs a weaker property
+You don't need the API's whole project. Your own module can restate the claims
+as `axiom`s over the same definitions, because an identity covers the statement,
+not the proof. If your code needs a weaker property
 than the API certifies, prove it from the API's claims in your own Lean code
 and require the API's claims.
 
@@ -204,11 +202,9 @@ import { createHTTPV } from "httpv";
 export const httpv = createHTTPV();
 ```
 
-The client verifies certificates itself, with ZKLean's built-in verifier. That
-verifier uses a **verifier key**: a fingerprint, fixed in the ZKLean package,
-of ZKLean's proof-checking program. A certificate that verifies under it
-was produced by that checker. The key never comes from the API being checked,
-and the client needs no Lean installation or other native tools.
+The client checks certificates itself, with a **verifier key** built into the
+ZKLean package: a fingerprint of ZKLean's checker, never one sent by the API.
+It needs no Lean or native tools.
 
 ### Check an endpoint
 
@@ -299,8 +295,8 @@ async function reserve(quantity: number) {
 }
 ```
 
-Discovery gives up after 10 seconds, but verification itself is not bounded;
-wrap `check` in your own deadline if you need one. Decide how old a result may
+Discovery times out after 10 seconds. Verification has no timeout; add your own
+if you need one. Decide how old a result may
 be before you stop relying on it.
 
 ### Local development
