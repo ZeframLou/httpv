@@ -1,7 +1,10 @@
 name: Check
 on:
+  # Documentation changes don't affect what CI checks; run Prettier locally.
   push:
+    paths-ignore: ["**.md", "docs/**", "LICENSE"]
   pull_request:
+    paths-ignore: ["**.md", "docs/**", "LICENSE"]
   workflow_dispatch:
 
 permissions:
