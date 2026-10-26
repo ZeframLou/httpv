@@ -4,9 +4,8 @@
 request.**
 
 HTTPV is an HTTP protocol and TypeScript library for Bun. API teams publish
-machine-checkable proofs of how their endpoints behave. Client teams check
-those proofs with one function call, in under a second, with nothing extra to
-install.
+machine-checkable proofs of how their endpoints behave. Client teams check those
+proofs with one function call, in under a second, with nothing extra to install.
 Ordinary requests and responses are unchanged.
 
 - **Client teams** stop calling an API as soon as their next check finds it no
