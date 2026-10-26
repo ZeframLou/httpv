@@ -3,7 +3,8 @@
 **Know when an API stops guaranteeing what your code depends on, before a bad
 request goes through.**
 
-HTTPV is an HTTP protocol and TypeScript library for Bun. API teams publish
+HTTPV is a convention for serving proof certificates from HTTP endpoints, and a
+TypeScript library for Bun that serves and checks them. API teams publish
 machine-checkable proofs of how their endpoints behave. Client teams review a
 guarantee once and pin it; after that they check each proof with one function
 call, in under a second, with no Lean installed.
@@ -117,8 +118,7 @@ if (result.status === "verified")
 
 The [usage guide](docs/USAGE.md) walks both teams through it: writing the Lean
 model, generating `requirements.json`, and rechecking on a schedule. The
-[protocol specification](SPEC.md) defines the wire format for other
-implementations.
+[specification](SPEC.md) defines the wire format for other implementations.
 
 ## Trust model
 
