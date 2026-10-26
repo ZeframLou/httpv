@@ -11,31 +11,34 @@ it in under a second, without the proofs and without installing Lean.
 
 ## Why
 
-Say your checkout relies on an inventory service's `POST /reservations` never
-reserving more stock than it has. One day the service starts accepting
-backorders. Your code hasn't changed and every request still succeeds, but you
-are now selling stock that doesn't exist, and nothing tells you.
+Say your shopping site's checkout relies on an inventory service's
+`POST /reservations` never reserving more stock than it has. One day the service
+starts accepting backorders. Your code hasn't changed and every request still
+succeeds, but you are now selling stock that doesn't exist, and nothing tells
+you.
 
-Docs and changelogs can't catch this; they are promises your code can't check.
-Formal proofs can, but today you would have to fetch the inventory team's Lean
-project and re-check its proofs on every deploy. Those proofs are thousands of
-lines for a small service and 10k–100k+ for a production one, so nobody does,
+Docs and changelogs can't catch this; they are promises your code can't check,
+and often the behavioral change is a bug that even the API team doesn't know
+about. Formal proofs can, but today you would have to fetch the inventory team's
+Lean project and re-check its proofs on every deploy. Those proofs are thousands
+of lines for a small service and 10k–100k+ for a production one, so nobody does,
 and you find out from an incident.
 
 With HTTPV, the inventory team proves "a reservation never exceeds available
 stock" in Lean and serves a ZKLean certificate next to the endpoint. The
-certificate carries a zero-knowledge proof that a valid proof exists, so your
-client checks it in under a second. When the guarantee you rely on changes, the
-check fails and your code blocks the request, switches provider or alerts
-someone before a bad order goes through.
+certificate carries a succinct (356 bytes) zero-knowledge proof that a valid
+proof exists, and your client code can check it in under a second. When the
+guarantee you rely on changes, the check fails and your code blocks the request,
+switches provider or alerts someone before a bad order goes through.
 
 Your own formal specs can then build on the inventory team's: their proved
 guarantees become dependencies of your proofs.
 
 ## What you get
 
-- **Breaking changes caught before the request.** A changed or dropped
-  guarantee fails the check; added guarantees and unrelated changes pass.
+- **Breaking changes and bugs caught before the request.** A changed or dropped
+  guarantee fails the check, whether the API team meant it or not; added
+  guarantees and unrelated changes pass.
 - **Cheap checks.** One function call, under a second, with no Lean installed.
 - **Precise claims.** Each guarantee is pinned by a fingerprint of its exact
   statement and the endpoint model it describes, so a rename can't hide a
@@ -55,7 +58,7 @@ HTTPV runs on [Bun](https://bun.sh/) 1.4.4 or newer. Proving certificates uses
 ZKLean's command-line tool; see its
 [usage guide](https://github.com/ZeframLou/zklean/blob/v0.1.0/docs/USAGE.md#set-up).
 
-## See it work
+## Try it
 
 [`examples/upgrades.ts`](examples/upgrades.ts) serves three versions of the
 inventory endpoint and checks each one the way a client would:
@@ -105,7 +108,7 @@ if (result.status === "verified")
   });
 ```
 
-## Publish, pin, check
+## Practical workflow
 
 1. **Publish.** The API team proves its guarantees with ZKLean once per release,
    in about 5 to 15 minutes for a small model, and serves the certificate.
