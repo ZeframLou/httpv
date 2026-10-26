@@ -29,10 +29,17 @@ zklean prove --project . --module Inventory \
 
 `--axioms` must list every axiom the proofs use, or `prove` refuses.
 `--timeout` is in milliseconds; the default is one hour. Proving runs offline,
-takes tens of minutes to hours and several GB of memory, and needs ZKLean's
-prover build and the guest program from its release
-(`curl -fLO https://github.com/ZeframLou/zklean/releases/download/v0.1.0/zklean-guest`),
-as its `CONTRIBUTING.md` describes.
+takes tens of minutes to hours and several GB of memory, and needs:
+
+- `zklean-native` built with `--features prover,execute`, given as
+  `ZKLEAN_NATIVE` unless it is the checkout's `target/release` build;
+- the guest program from ZKLean's release, given as `ZKLEAN_GUEST_ELF`:
+  `curl -fLO https://github.com/ZeframLou/zklean/releases/download/v0.1.0/zklean-guest`;
+- 6.2 GB of SP1 Groth16 circuit files, which the first proof downloads to
+  `~/.sp1/circuits`.
+
+ZKLean's [usage guide](https://github.com/ZeframLou/zklean/blob/v0.1.0/docs/USAGE.md#tools)
+describes these tools.
 
 A certificate is typically under 1 KB; its size grows with the number of claims
 and axioms, not with the size of the proofs. It holds:

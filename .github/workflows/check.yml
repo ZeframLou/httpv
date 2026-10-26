@@ -19,15 +19,14 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: "1.4.4"
-      - name: Install private ZKLean dependency
+      # The token is needed only while ZeframLou/zklean is private.
+      - name: Install dependencies
         env:
           ZKLEAN_READ_TOKEN: ${{ secrets.ZKLEAN_READ_TOKEN }}
         run: |
-          if [ -z "$ZKLEAN_READ_TOKEN" ]; then
-            echo "Set ZKLEAN_READ_TOKEN to a token with read access to ZeframLou/zklean." >&2
-            exit 1
+          if [ -n "$ZKLEAN_READ_TOKEN" ]; then
+            git config --global url."https://x-access-token:$ZKLEAN_READ_TOKEN@github.com/".insteadOf https://git@github.com/
           fi
-          git config --global url."https://x-access-token:$ZKLEAN_READ_TOKEN@github.com/".insteadOf https://git@github.com/
           bun install --frozen-lockfile
       - run: bun run format:check
       - run: bun run check
@@ -45,20 +44,12 @@ jobs:
         name: Read the development SDK pin
         run: |
           bun -e 'import p from "./package.json"; const ref=p.devDependencies.zklean.split("#")[1]; if(!/^(v\d+\.\d+\.\d+|[0-9a-f]{40})$/.test(ref)) throw new Error("pin the SDK to a release tag or commit"); console.log("ref="+ref)' >> "$GITHUB_OUTPUT"
-      - name: Check SDK read credentials
-        env:
-          ZKLEAN_READ_TOKEN: ${{ secrets.ZKLEAN_READ_TOKEN }}
-        run: |
-          if [ -z "$ZKLEAN_READ_TOKEN" ]; then
-            echo "Set ZKLEAN_READ_TOKEN to a token with read-only Contents access to ZeframLou/zklean." >&2
-            exit 1
-          fi
       - uses: actions/checkout@v4
         with:
           repository: ZeframLou/zklean
           ref: ${{ steps.sdk.outputs.ref }}
           path: .tooling/zklean
-          token: ${{ secrets.ZKLEAN_READ_TOKEN }}
+          token: ${{ secrets.ZKLEAN_READ_TOKEN || github.token }}
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
@@ -79,7 +70,9 @@ jobs:
         env:
           ZKLEAN_READ_TOKEN: ${{ secrets.ZKLEAN_READ_TOKEN }}
         run: |
-          git config --global url."https://x-access-token:$ZKLEAN_READ_TOKEN@github.com/".insteadOf https://git@github.com/
+          if [ -n "$ZKLEAN_READ_TOKEN" ]; then
+            git config --global url."https://x-access-token:$ZKLEAN_READ_TOKEN@github.com/".insteadOf https://git@github.com/
+          fi
           bun install --frozen-lockfile
           # ZKLean finds its native checker, exporter and Lake from its checkout.
           export ZKLEAN_CLI="$PWD/.tooling/zklean/src/cli.ts"

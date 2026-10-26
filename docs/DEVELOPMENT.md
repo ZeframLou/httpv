@@ -55,7 +55,7 @@ Proving also needs ZKLean's prover build and the **guest program** attached to
 that ZKLean GitHub release: the program that checks Lean proofs inside SP1, so
 that the proofs verify under the key pinned in the SDK. ZKLean's
 `CONTRIBUTING.md` describes both; set `ZKLEAN_GUEST_ELF` to that guest. The
-first proof downloads SP1's Groth16 circuit files. Proving takes tens of
+first proof downloads SP1's 6.2 GB Groth16 circuit files to `~/.sp1/circuits`. Proving takes tens of
 minutes to hours and several GB of memory. Run one proof at a time and bound
 its resources, for example:
 
@@ -76,9 +76,9 @@ it.
 
 Prove the example on the commit to be released, commit the certificates and
 their exports, and tag it with the `version` in `package.json`, such as
-`v0.1.0`. Each certificate names its export at that tag, so push the tag before
-relying on `check:certificates` downloading sources. Then, after ZKLean's SDK
-is published to npm, publish HTTPV:
+`v0.1.0`. Each certificate names its export at that tag, so clients can fetch
+its definitions only once the tag is pushed. Then, after ZKLean's SDK is
+published to npm, publish HTTPV:
 
 ```sh
 bun run check
