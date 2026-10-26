@@ -67,9 +67,8 @@ backorders, so the client blocks it.
 
 1. The API author proves the guarantees once per release with
    [ZKLean](https://github.com/ZeframLou/zklean), the proving tool HTTPV builds
-   on: about 5 to
-   15 minutes for a small model. The result is a certificate, typically under 1
-   KB.
+   on: about 5 to 15 minutes for a small model. The result is a certificate,
+   typically under 1 KB.
 2. The server answers an HTTP `OPTIONS` request to the endpoint's own URL with
    that certificate. It also publishes the certificate's Lean definitions as a
    single file.
