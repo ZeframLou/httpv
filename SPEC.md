@@ -1,6 +1,6 @@
 # HTTP Verified (HTTPV)
 
-**Version `httpv/1`** · Draft · Work in progress; the format may change.
+**Version `httpv/1`** · Stable: a change to the wire format takes a new version.
 
 ## Abstract
 
@@ -229,7 +229,7 @@ mirror cannot change what is accepted.
 
 ## 7. IANA considerations
 
-This draft requests no registration yet: the standards tree requires an
+This specification requests no registration yet: the standards tree requires an
 IETF-approved specification with the IETF as change controller [RFC6838,
 Section 3.1], so until then the name is for experimental use and may change.
 Template for a future registration:
