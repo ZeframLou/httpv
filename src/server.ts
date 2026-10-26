@@ -24,7 +24,10 @@ function acceptsDiscovery(accept: string | null): boolean {
  * Paths are compared as the URL parser normalizes them, without
  * the query. Static certificates are checked at startup, providers on every
  * discovery request; ZKLean rejects a source that is not https. */
-export function serve({ routes, fetch }: ServeOptions): { fetch: Handler } {
+export function serve<Args extends unknown[]>({
+  routes,
+  fetch,
+}: ServeOptions<Args>): { fetch: Handler<Args> } {
   const paths = new Map<string, Map<string, Source>>();
   for (const [route, source] of Object.entries(routes)) {
     const [method = "", path = "", extra] = route.split(" ");
@@ -46,7 +49,7 @@ export function serve({ routes, fetch }: ServeOptions): { fetch: Handler } {
     paths.set(path, methods);
   }
   return {
-    async fetch(request) {
+    async fetch(request, ...args) {
       // A CORS preflight is the browser asking about a later request, never
       // discovery, so the application answers it.
       if (
@@ -54,9 +57,9 @@ export function serve({ routes, fetch }: ServeOptions): { fetch: Handler } {
         request.headers.has("access-control-request-method") ||
         !acceptsDiscovery(request.headers.get("accept"))
       )
-        return fetch(request);
+        return fetch(request, ...args);
       const methods = paths.get(new URL(request.url).pathname);
-      if (!methods) return fetch(request);
+      if (!methods) return fetch(request, ...args);
       try {
         // fromEntries defines own properties, so a method named __proto__ works.
         const certificates: Record<string, Certificate> = Object.fromEntries(
@@ -78,7 +81,8 @@ export function serve({ routes, fetch }: ServeOptions): { fetch: Handler } {
             },
           },
         );
-      } catch {
+      } catch (error) {
+        console.error("httpv: could not produce a certificate", error);
         return new Response(null, { status: 503 });
       }
     },

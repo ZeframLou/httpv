@@ -366,3 +366,50 @@ test("check() reports why discovery failed, for any method spelling", async () =
       }),
     ).toMatchObject({ status: "unknown", reason: "unavailable" });
 });
+
+test("the application gets CORS preflights and every handler argument", async () => {
+  const seen: unknown[][] = [];
+  const handler = serve({
+    routes: { "POST /r": v1 },
+    fetch: (request, ...args: unknown[]) => {
+      seen.push([request.method, ...args]);
+      return new Response("app");
+    },
+  });
+  const preflight = new Request("https://example.test/r", {
+    method: "OPTIONS",
+    headers: { Accept: MEDIA_TYPE, "Access-Control-Request-Method": "POST" },
+  });
+  expect(await (await handler.fetch(preflight, "server", "ctx")).text()).toBe(
+    "app",
+  );
+  expect(
+    await (
+      await handler.fetch(new Request("https://example.test/r"), 1)
+    ).text(),
+  ).toBe("app");
+  expect(seen).toEqual([
+    ["OPTIONS", "server", "ctx"],
+    ["GET", 1],
+  ]);
+});
+
+test("the default transport refuses a real redirect", async () => {
+  using app = listen(v1);
+  using hop = {
+    server: Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      fetch: () => Response.redirect(app.url, 307),
+    }),
+    [Symbol.dispose]() {
+      this.server.stop(true);
+    },
+  };
+  await expect(
+    createHTTPV().query(
+      `http://127.0.0.1:${hop.server.port}/reservations`,
+      local,
+    ),
+  ).rejects.toMatchObject({ reason: "unavailable" });
+});

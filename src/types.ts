@@ -41,7 +41,8 @@ export interface QueryOptions {
   /** Allow plain HTTP to `localhost` or a loopback address, for development. */
   allowInsecureHttp?: boolean | undefined;
   signal?: AbortSignal | undefined;
-  /** Milliseconds before discovery is abandoned. Default 10 s. */
+  /** Milliseconds before discovery, or a whole `check`, is abandoned.
+   * Default 10 s. */
   timeout?: number | undefined;
 }
 
@@ -55,9 +56,14 @@ export interface ClientOptions extends VerifierOptions {
   fetch?: (input: URL, init: RequestInit) => Promise<Response>;
 }
 
-export type Handler = (request: Request) => Response | Promise<Response>;
+/** A Fetch handler; runtime arguments after the request, such as Bun's server
+ * or a Worker's env and context, pass through unchanged. */
+export type Handler<Args extends unknown[] = unknown[]> = (
+  request: Request,
+  ...args: Args
+) => Response | Promise<Response>;
 export type Source = Certificate | (() => Certificate | Promise<Certificate>);
-export interface ServeOptions {
+export interface ServeOptions<Args extends unknown[] = unknown[]> {
   routes: Record<string, Source>;
-  fetch: Handler;
+  fetch: Handler<Args>;
 }

@@ -12,13 +12,15 @@ import type {
   ClientOptions,
   Dependency,
   QueryOptions,
-  Reason,
   Requirement,
   Result,
 } from "./types.ts";
 
 /** Every client accepts responses this large (SPEC 3.3), and reads no more. */
 const MAX_DISCOVERY_BYTES = 64 * 1024;
+
+/** SPEC 5.3: never accept these, whatever the caller lists. */
+const UNSAFE_AXIOMS = ["sorryAx", "Lean.ofReduceBool", "Lean.trustCompiler"];
 
 /** Plain HTTP is only for a server on this machine. */
 const loopback = (host: string) =>
@@ -134,14 +136,18 @@ export function createHTTPV(options: ClientOptions = {}) {
     certificate: Certificate,
     requirement: Requirement,
   ): Promise<Result> {
-    // Own the inputs: the caller's objects may change while verification awaits.
-    [certificate, requirement] = structuredClone([certificate, requirement]);
     let requirements: Requirements;
     try {
+      // Own the inputs: the caller's objects may change while verification
+      // awaits.
+      [certificate, requirement] = structuredClone([certificate, requirement]);
       // ZKLean rejects requirements with no claims, which would accept any
       // valid certificate.
       requirements = await loadRequirements(requirement.requirements);
-      identified(requirement.axioms);
+      const unsafe = UNSAFE_AXIOMS.find((name) =>
+        Object.hasOwn(identified(requirement.axioms), name),
+      );
+      if (unsafe) throw new Error(`${unsafe} must never be accepted`);
     } catch (error) {
       return {
         status: "unknown",
@@ -149,34 +155,68 @@ export function createHTTPV(options: ClientOptions = {}) {
         detail: String(error),
       };
     }
-    const { status, reason, ...identity } = await verify(certificate, {
-      axioms: requirement.axioms,
-    });
-    if (status !== "verified")
-      return { ...identity, status, reason: reason as Reason };
-    // Same name and identity: the same statement about the same definitions.
-    return satisfies(certificate, requirements)
-      ? { ...identity, status: "verified", reason: "exact-match" }
-      : { ...identity, status: "incompatible", reason: "requirements-not-met" };
+    const result = await verify(certificate, { axioms: requirement.axioms });
+    if (result.status !== "verified") return result;
+    const { statementId } = result;
+    // Judge exactly the claims ZKLean verified. Same name and identity: the
+    // same statement about the same definitions.
+    return satisfies(result, requirements)
+      ? { statementId, status: "verified", reason: "exact-match" }
+      : { statementId, status: "incompatible", reason: "requirements-not-met" };
   }
 
-  /** Query and compare. Never throws; failures are `unknown` results. */
+  /** Query and compare within one deadline. Never throws; failures are
+   * `unknown` results. */
   async function check(
     dependency: Dependency,
-    options: Pick<QueryOptions, "signal" | "timeout"> = {},
+    { signal, timeout = 10_000 }: Pick<QueryOptions, "signal" | "timeout"> = {},
   ): Promise<Result> {
     try {
       // Own the dependency: the caller's object may change while discovery awaits.
       dependency = structuredClone(dependency);
-      return await compare(
-        await query(dependency.url, { ...dependency, ...options }),
-        dependency,
-      );
+    } catch (error) {
+      return {
+        status: "unknown",
+        reason: "invalid-requirements",
+        detail: String(error),
+      };
+    }
+    let deadline: AbortSignal;
+    let certificate: Certificate;
+    try {
+      deadline = AbortSignal.any([
+        AbortSignal.timeout(timeout),
+        ...(signal ? [signal] : []),
+      ]);
+      certificate = await query(dependency.url, {
+        ...dependency,
+        signal: deadline,
+        timeout,
+      });
     } catch (error) {
       const reason =
         error instanceof DiscoveryError ? error.reason : "unavailable";
       return { status: "unknown", reason, detail: String(error) };
     }
+    // Verification cannot be cancelled, so stop waiting for it at the deadline.
+    const expired = new Promise<Result>((resolve) => {
+      const stop = () =>
+        resolve({
+          status: "unknown",
+          reason: "verifier-unavailable",
+          detail: String(deadline.reason),
+        });
+      if (deadline.aborted) stop();
+      else deadline.addEventListener("abort", stop, { once: true });
+    });
+    const compared = compare(certificate, dependency).catch(
+      (error): Result => ({
+        status: "unknown",
+        reason: "verifier-unavailable",
+        detail: String(error),
+      }),
+    );
+    return Promise.race([compared, expired]);
   }
 
   return { query, compare, check };

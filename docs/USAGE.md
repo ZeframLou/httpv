@@ -118,8 +118,10 @@ endpoint's URL that asks for `application/httpv+json`.
 
 `serve` answers discovery and passes every other request to your handler,
 including `OPTIONS` for paths without certificates and browser CORS preflight
-requests. Paths match exactly and the query is ignored. `serve` throws at
-startup if a static certificate is malformed; it does not verify proofs.
+requests. It also passes your handler any arguments after the request, such as
+Bun's server. Routes match the path exactly, whatever the host, and ignore the
+query. `serve` throws at startup if a static certificate is malformed; it does
+not verify proofs.
 
 Give each endpoint its own certificate, with claims about that endpoint only,
 so changing one endpoint never affects clients of another.
@@ -131,9 +133,9 @@ every discovery request:
 "POST /reservations": () => Bun.file("./certs/reservations.json").json(),
 ```
 
-If the function throws or returns an invalid certificate, discovery for that
-path fails with `503`, so `check` returns status `unknown` with reason
-`unavailable` for every method on that path (see
+If the function throws or returns an invalid certificate, `serve` logs the error
+and discovery for that path fails with `503`, so `check` returns status
+`unknown` with reason `unavailable` for every method on that path (see
 [Check an endpoint](#check-an-endpoint)).
 
 ## For client teams
@@ -231,7 +233,9 @@ if (result.status !== "verified")
 ```
 
 `axioms` lists the axioms you accept, by name and identity; `{}` accepts only
-certificates that use none.
+certificates that use none. `sorryAx`, `Lean.ofReduceBool` and
+`Lean.trustCompiler` can prove false statements, so listing any of them makes
+the requirements invalid.
 
 `check` fetches the endpoint's certificate, verifies it, and compares its
 claims with your requirements. It never throws; it returns a status and a
@@ -257,7 +261,8 @@ reason:
     to `compare` is malformed.
   - `forbidden-axiom`: it uses an axiom you did not accept.
   - `axiom-mismatch`: it uses an accepted axiom's name with another identity.
-  - `verifier-unavailable`: the verifier could not run.
+  - `verifier-unavailable`: the verifier could not run or did not finish
+    before the deadline.
 - **Your configuration failed:** `invalid-requirements`: the requirements file
   is missing, malformed or has no claims, or `axioms` is malformed.
 
@@ -296,9 +301,9 @@ async function reserve(quantity: number) {
 }
 ```
 
-Discovery times out after 10 seconds. Verification has no timeout; add your own
-if you need one. Decide how old a result may
-be before you stop relying on it.
+`check` gives up after 10 seconds, covering discovery and verification
+together, and returns `unknown`. Set a maximum age for `latest` before you stop
+relying on it.
 
 ### Local development
 
@@ -311,12 +316,11 @@ endpoint description passed to `check`.
 - `httpv.query(url, { method })` returns the endpoint's certificate, or throws
   a `DiscoveryError` with the reason.
 - `httpv.compare(certificate, inventory)` runs the rest of the check.
-- Discovery's `timeout`, in milliseconds, and an abort `signal` go in
-  `query`'s options or `check`'s second argument. The timeout applies even
-  with a signal.
+- A `timeout` in milliseconds and an abort `signal` go in `query`'s options,
+  where they bound discovery, or in `check`'s second argument, where they bound
+  the whole check. The timeout applies even with a signal.
 - `createHTTPV({ fetch })` uses another transport, which must not follow
   redirects or relax TLS.
-- `createHTTPV({ backend })` uses another verifier. A backend has a label for
-  its trusted configuration, `identity` (unrelated to claim identities), and an
-  async `verify(certificate)` returning a boolean. It is trusted to decide
-  whether the proof establishes the certificate's claims and axioms.
+- `createHTTPV({ backend })` uses another verifier: an object with an async
+  `verify(certificate)` returning a boolean. It is trusted to decide whether
+  the proof establishes the certificate's claims and axioms.

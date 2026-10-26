@@ -26,7 +26,6 @@ export function inventory() {
   const { privateKey, publicKey } = generateKeyPairSync("ed25519");
   const signed = (c: Certificate) => Buffer.from(canonical(statement(c)));
   const backend: ProofBackend = {
-    identity: `test:${publicKey.export({ type: "spki", format: "der" }).toString("hex")}`,
     async verify(certificate) {
       // The 64-byte signature leads the fixed-size proof.
       return verify(

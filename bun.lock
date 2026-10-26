@@ -28,6 +28,6 @@
 
     "undici-types": ["undici-types@8.9.0", "", {}, "sha512-KTDyRTYX8sWmKXAikPHHSyc63CRPETMctyjKFupcC6OBLXT3xsN0e9aF7m+mIXutFWpUXuedtowG7iLOzp0kQg=="],
 
-    "zklean": ["zklean@git+https://git@github.com/ZeframLou/zklean.git#094b81bffc71a05175a0b750d98579c9d7c499dd", {}, "094b81bffc71a05175a0b750d98579c9d7c499dd"],
+    "zklean": ["zklean@git+https://git@github.com/ZeframLou/zklean.git#c3e69ca3ac7d19a8f310d927702c121e6d4c8323", {}, "c3e69ca3ac7d19a8f310d927702c121e6d4c8323"],
   }
 }

@@ -103,3 +103,43 @@ test("a dependency changed during discovery is checked as it was", async () => {
   open();
   expect(await pending).toMatchObject({ status: "incompatible" });
 });
+
+test("axiom policies are enforced by name and identity", async () => {
+  expect(
+    await compare(fixtures.v1, { axioms: { propext: id("another propext") } }),
+  ).toMatchObject({ status: "unknown", reason: "axiom-mismatch" });
+  // SPEC 5.3: these are never accepted, even when listed.
+  expect(
+    await compare(fixtures.v1, { axioms: { ...axioms, sorryAx: id("sorry") } }),
+  ).toMatchObject({ status: "unknown", reason: "invalid-requirements" });
+});
+
+test("check() gives up on verification at its deadline", async () => {
+  const client = createHTTPV({
+    backend: { verify: () => new Promise(() => {}) },
+    fetch: async () =>
+      Response.json(
+        { format: "httpv/1", certificates: { POST: fixtures.v1 } },
+        { headers: { "content-type": MEDIA_TYPE } },
+      ),
+  });
+  const dependency = {
+    url: "https://inventory.example/reservations",
+    method: "POST",
+    requirements: fixtures.exact,
+    axioms,
+  };
+  expect(await client.check(dependency, { timeout: 50 })).toMatchObject({
+    status: "unknown",
+    reason: "verifier-unavailable",
+  });
+  // An invalid timeout is reported, not thrown.
+  expect(await client.check(dependency, { timeout: -1 })).toMatchObject({
+    status: "unknown",
+    reason: "unavailable",
+  });
+  // A dependency that cannot be copied is the caller's error.
+  expect(
+    await client.check({ ...dependency, requirements: (() => {}) as never }),
+  ).toMatchObject({ status: "unknown", reason: "invalid-requirements" });
+});
