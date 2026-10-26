@@ -22,15 +22,7 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: "1.4.4"
-      # The token is needed only while ZeframLou/zklean is private.
-      - name: Install dependencies
-        env:
-          ZKLEAN_READ_TOKEN: ${{ secrets.ZKLEAN_READ_TOKEN }}
-        run: |
-          if [ -n "$ZKLEAN_READ_TOKEN" ]; then
-            git config --global url."https://x-access-token:$ZKLEAN_READ_TOKEN@github.com/".insteadOf https://git@github.com/
-          fi
-          bun install --frozen-lockfile
+      - run: bun install --frozen-lockfile
       - run: bun run format:check
       - run: bun run check
       # No native tools or Lean are installed in this job.
@@ -52,7 +44,6 @@ jobs:
           repository: ZeframLou/zklean
           ref: ${{ steps.sdk.outputs.ref }}
           path: .tooling/zklean
-          token: ${{ secrets.ZKLEAN_READ_TOKEN || github.token }}
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
@@ -70,12 +61,7 @@ jobs:
           cargo build --release --locked -p zklean-native
           bash scripts/setup-exporter.sh
       - name: Check the example certificates against their Lean sources
-        env:
-          ZKLEAN_READ_TOKEN: ${{ secrets.ZKLEAN_READ_TOKEN }}
         run: |
-          if [ -n "$ZKLEAN_READ_TOKEN" ]; then
-            git config --global url."https://x-access-token:$ZKLEAN_READ_TOKEN@github.com/".insteadOf https://git@github.com/
-          fi
           bun install --frozen-lockfile
           # ZKLean finds its native checker, exporter and Lake from its checkout.
           export ZKLEAN_CLI="$PWD/.tooling/zklean/src/cli.ts"

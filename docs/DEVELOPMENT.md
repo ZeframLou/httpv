@@ -75,9 +75,7 @@ should differ.
 
 CI checks formatting, types and tests, and runs the example with no native
 tools or Lean installed. A second job builds the pinned ZKLean tool and runs
-`bun run check:certificates`. While `ZeframLou/zklean` is private, set the
-`ZKLEAN_READ_TOKEN` Actions secret to a read-only token with Contents access to
-it.
+`bun run check:certificates`.
 
 ## Release
 
