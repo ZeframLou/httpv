@@ -61,15 +61,16 @@ Ordinary requests and responses are unchanged.
     certificate          ──▶                                     3. call, or block
 ```
 
-Proving happens once per release, offline, and takes tens of minutes to hours.
-Checking is cheap: ZKLean's inventory example compiles to a 381 KB export of
-Lean declarations but a certificate under 1 KB, and the client verifies it with
-no Lean installation.
+The API author proves once per release, offline, which takes minutes. The
+server publishes each endpoint's certificate in answer to an HTTP `OPTIONS`
+request for the endpoint's own URL, so no new URLs are needed. Clients fetch it
+there; a certificate is under 1 KB and verifies in the client without a Lean
+installation.
 
 ## Trust model
 
-Clients check each certificate's cryptographic proof themselves, trusting only
-ZKLean's verifier and the key built into its SDK, their own reviewed
+Clients check each certificate's cryptographic proof themselves, trusting
+ZKLean's checker and the cryptography behind its proofs, their own reviewed
 requirements, and the axioms they accept. They still trust the server to run
 code that behaves as its Lean function describes. HTTPV cannot detect a server
 that misbehaves behind an unchanged certificate, or a change between two
@@ -119,9 +120,8 @@ if (result.status === "verified")
 
 [`examples/upgrades.ts`](examples/upgrades.ts) serves three versions of an
 endpoint: version 2 adds a guarantee and should pass; version 3 accepts
-backorders and should be blocked. Its certificates predate the current format,
-so today it reports `unknown (unavailable)` for all three. Run it from a clone
-with `bun run example` ([setup](docs/DEVELOPMENT.md)).
+backorders and should be blocked. Run it from a clone with `bun run example`
+([setup](docs/DEVELOPMENT.md)).
 
 The [usage guide](docs/USAGE.md) covers writing requirements, accepting
 axioms, and rechecking on a schedule. The [protocol specification](SPEC.md)

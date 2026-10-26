@@ -28,16 +28,29 @@ and only when, they appear in all capitals, as shown here.
 ### 1.2. Terminology
 
 "Resource", "target URI", "method" and "origin server" are used as in HTTP
-Semantics [RFC9110]. "Certificate", "claim", "axiom", "identity" and
-"requirements" are as in ZKLean [ZKLEAN]: a certificate names its proved claims
-and the axioms they use, each with an identity that covers its name and
-statement and everything the statement refers to, but not its proof. In
-addition:
+Semantics [RFC9110]. ZKLean [ZKLEAN] checks Lean [LEAN] proofs inside the SP1
+zero-knowledge virtual machine [SP1] and summarizes the result as a short
+Groth16 [GROTH16] proof. "Certificate", "claim", "axiom", "identity",
+"statement identity" and "requirements" are as in ZKLean:
+
+- a **certificate** names its proved claims and the axioms they use, each with
+  an **identity** that covers its name, its statement and everything the
+  statement refers to, but not its proof;
+- the **statement identity** identifies a certificate's claims and axioms
+  together;
+- **requirements** list claims, with identities, that a certificate must
+  prove.
+
+In addition:
 
 - **Endpoint:** one method at one path of an origin, such as `POST /units`.
 - **Operation:** the Lean function that defines an endpoint's behavior.
 - **Server:** an origin server that publishes certificates (Section 3).
 - **Client:** software that discovers and checks them (Sections 3 and 4).
+- **Axiom policy:** the axioms, by name and identity, that a client accepts
+  certificates to use.
+- **Verifier:** a client's implementation of ZKLean verification, with the
+  verifying key that identifies ZKLean's checker.
 
 ## 2. Overview
 
@@ -89,7 +102,8 @@ ordinary.
 
 The server selects certificates by the target URI's path as the URL Standard
 [URL] parses it, compared exactly, ignoring the query. It MUST NOT return
-certificates for a path that its ordinary routing maps to another resource. A
+certificates for a path that its ordinary routing maps to a resource other than
+the endpoints those certificates describe. A
 path without certificates gets an ordinary response.
 
 Otherwise the server MUST respond `200 (OK)` with
@@ -125,19 +139,20 @@ labeled `application/httpv+json`.
 ### 3.3. Client processing
 
 A client MUST accept up to 64 KiB of decoded content and MUST bound what it
-reads. It classifies the response by the first matching row; every outcome but
-the last makes the result `unknown` (Section 4).
+reads. It classifies the response by the first matching row. Every outcome but
+the last makes the result `unknown` (Section 4), with the outcome as its
+reason.
 
-| Response                                                                      | Outcome         |
-| ----------------------------------------------------------------------------- | --------------- |
-| Network error, redirect, timeout, or failure reading the content              | Unavailable     |
-| A `2xx` other than `200` labeled `application/httpv+json`                     | Invalid         |
-| `404`, `405`, `406` or `501`, or a `2xx` not labeled `application/httpv+json` | No certificate  |
-| Any other status other than `200`                                             | Unavailable     |
-| Content too large, not UTF-8 JSON, or not the object above                    | Invalid         |
-| The object lacks the requested method                                         | No certificate  |
-| That method's certificate is not well formed [ZKLEAN]                         | Invalid         |
-| Otherwise                                                                     | The certificate |
+| Response                                                                      | Outcome                 |
+| ----------------------------------------------------------------------------- | ----------------------- |
+| Network error, redirect, timeout, or failure reading the content              | `unavailable`           |
+| A `2xx` other than `200` labeled `application/httpv+json`                     | `invalid-advertisement` |
+| `404`, `405`, `406` or `501`, or a `2xx` not labeled `application/httpv+json` | `missing-certificate`   |
+| Any other status other than `200`                                             | `unavailable`           |
+| Content over the client's bound, not UTF-8 JSON, or not the object above      | `invalid-advertisement` |
+| The object lacks the requested method                                         | `missing-certificate`   |
+| That method's certificate is not well formed [ZKLEAN]                         | `invalid-advertisement` |
+| Otherwise                                                                     | The certificate         |
 
 `OPTIONS` responses are not cacheable [RFC9110, Section 9.3.7], so a client
 fetches the current certificate at each check.
@@ -148,7 +163,7 @@ A client MUST:
 
 1. verify the certificate as ZKLean defines [ZKLEAN], with a verifier and key it
    chose in advance, never ones the response selects, accepting only axioms in
-   its policy with the same identity; and
+   its axiom policy with the same identity; and
 2. require every claim in its requirements to appear in the certificate's
    `claims` with the same identity. Other claims are allowed.
 
@@ -293,6 +308,8 @@ Template for a future registration:
   Syntax Suffixes", RFC 6839, January 2013.
 - **[RFC9205]** Nottingham, M., "Building Protocols with HTTP", BCP 56,
   RFC 9205, June 2022.
+- **[SP1]** Succinct, "SP1", version 6.10.0,
+  <https://github.com/succinctlabs/sp1/tree/v6.10.0>.
 
 ## Appendix A. Example
 

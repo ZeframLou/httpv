@@ -1,58 +1,81 @@
 # Using HTTPV
 
-The [README](../README.md) explains the concepts: certificates, claims,
-identities, axioms, and requirements.
+This guide is for two teams:
+
+- **API teams** publish a certificate for each endpoint, so clients can check
+  by machine that it still behaves as promised.
+- **Client teams** check those certificates before relying on an endpoint, and
+  stop sending dependent requests when a promise they rely on changes.
+
+The [README](../README.md#concepts) defines the terms used here: Lean, ZKLean,
+certificates, claims, identities, axioms and requirements.
 
 ## Install
 
-Install as in the [README](../README.md#get-started). For TypeScript checking,
-add `@types/bun` as a development dependency.
+Both teams install the packages as in the
+[README](../README.md#get-started). For TypeScript checking, also add
+`@types/bun` as a development dependency.
 
-Generating certificates and requirements needs the
-[ZKLean CLI](https://github.com/ZeframLou/zklean), run from a release checkout
-(`git clone --branch v0.1.0 https://github.com/ZeframLou/zklean`) as
-`bun src/cli.ts` with its native checker and `lean4export` built (ZKLean's
-`CONTRIBUTING.md`); this guide writes it as `zklean`. Lean projects must
-select `leanprover/lean4:v4.35.0` in `lean-toolchain`. Checking certificates
-needs only the installed packages.
+Writing certificates and requirements also needs the ZKLean command-line tool,
+which checks Lean proofs and generates certificates from them. Install it as
+ZKLean's guide describes in
+[Set up](https://github.com/ZeframLou/zklean/blob/v0.1.0/docs/USAGE.md#set-up);
+this guide writes it as `zklean`. Lean projects must select
+`leanprover/lean4:v4.35.0` in their `lean-toolchain` file. Checking
+certificates needs only the packages.
 
-## Serve a certificate
+## For API teams
 
-Generate each endpoint's certificate with `zklean prove` before deployment:
+### Model the endpoint in Lean
+
+Write the endpoint's behavior as a Lean function, and prove theorems about it
+that clients can rely on. A reservation endpoint might be:
+
+```lean
+namespace Inventory
+
+/-- POST /reservations: take `quantity` units from `stock`, or reject. -/
+def reserve (stock quantity : Nat) : Option Nat :=
+  if quantity ≤ stock then some (stock - quantity) else none
+
+/-- An accepted reservation never exceeds the available stock. -/
+theorem reservation_safe (stock quantity remaining : Nat)
+    (accepted : reserve stock quantity = some remaining) : quantity ≤ stock := by
+  unfold reserve at accepted
+  split at accepted <;> simp_all
+
+end Inventory
+```
+
+Your server's code must behave as this function does; HTTPV certifies the
+function, not the code. [`examples/inventory`](../examples/inventory) is a
+complete project with three versions of an endpoint.
+
+### Generate the certificate
+
+Prove the theorems into a certificate before deployment:
 
 ```sh
 zklean prove --project . --module Inventory \
   --claims Inventory.reservation_safe --axioms propext \
   --source https://inventory.example.com/reservations.ndjson \
-  --timeout 86400000 --out certs/reservations.json
+  --out certs/reservations.json
 ```
 
-`--axioms` must list every axiom the proofs use, or `prove` refuses.
-`--timeout` is in milliseconds; the default is one hour. Proving runs offline,
-takes tens of minutes to hours and several GB of memory, and needs:
+- `--claims` names the theorems the certificate proves.
+- `--axioms` must list every axiom the proofs use, or `prove` refuses.
+- `--source` is the URL where you will publish the **export**: a file of the
+  Lean definitions behind the claims. `prove` writes it beside the certificate,
+  as `certs/reservations.ndjson`. Clients read it to see exactly what each
+  claim says. The export also contains your proofs; to keep them private,
+  publish instead the export of a module that states each claim as an `axiom`,
+  which has the same identities.
 
-- `zklean-native` built with `--features prover,execute`, given as
-  `ZKLEAN_NATIVE` unless it is the checkout's `target/release` build;
-- the guest program from ZKLean's release, given as `ZKLEAN_GUEST_ELF`:
-  `curl -fLO https://github.com/ZeframLou/zklean/releases/download/v0.1.0/zklean-guest`;
-- 6.2 GB of SP1 Groth16 circuit files, which the first proof downloads to
-  `~/.sp1/circuits`.
+Proving takes about 5 to 15 minutes and up to 20 GB of memory on a 12-core
+machine, and needs the prover setup in ZKLean's guide. A certificate is
+typically under 1 KB, whatever the size of the proofs.
 
-ZKLean's [usage guide](https://github.com/ZeframLou/zklean/blob/v0.1.0/docs/USAGE.md#tools)
-describes these tools.
-
-A certificate is typically under 1 KB; its size grows with the number of claims
-and axioms, not with the size of the proofs. It holds:
-
-- **claims:** the proved theorems, each with its identity;
-- **axioms:** the unproved assumptions the proofs use, with their identities;
-- **proof:** the cryptographic proof of the claims under those axioms;
-- **source:** the URL where you publish the **Lean export**, a file of the
-  compiled Lean declarations the identities are computed from. `zklean prove`
-  writes it (`certs/reservations.ndjson`) beside the certificate; pass its URL
-  with `--source`. To keep proofs private, publish at that URL an export of a
-  module that states the claims as axioms instead; identities do not cover
-  proofs, so they are the same.
+### Serve the certificate
 
 Wrap your existing Fetch handler:
 
@@ -71,14 +94,14 @@ Bun.serve({
 });
 ```
 
-HTTPV answers **discovery**: `OPTIONS` requests that ask for
-`application/httpv+json`. Every other request goes to your handler, including
-`OPTIONS` for paths without certificates and CORS preflight requests. Paths
-match exactly and the query is ignored. `serve` validates static certificates
-when it is called.
+Clients fetch a certificate with **discovery**: an `OPTIONS` request to the
+endpoint's URL that asks for `application/httpv+json`. `serve` answers those
+and passes every other request to your handler, including `OPTIONS` for paths
+without certificates and browser CORS preflight requests. Paths match exactly
+and the query is ignored. `serve` checks static certificates when it is called.
 
-Give each endpoint its own certificate, with claims about that endpoint's
-behavior, so changing one endpoint never disturbs clients of another.
+Give each endpoint its own certificate, with claims about that endpoint only,
+so changing one endpoint never affects clients of another.
 
 To change a certificate without restarting, pass a function instead. It runs on
 every discovery request:
@@ -87,11 +110,44 @@ every discovery request:
 "POST /reservations": () => Bun.file("./certs/reservations.json").json(),
 ```
 
-If the function throws or returns an invalid certificate, the server answers
-`503` for that path, so clients of every method on it report
-`unknown / unavailable`.
+If the function throws or returns an invalid certificate, discovery for that
+path fails with `503`, so clients of every method on it get no result.
 
-## Create a client
+## For client teams
+
+### Write your requirements
+
+Your requirements are the claims your code relies on, each with its identity,
+in a JSON file:
+
+```json
+{
+  "format": "zklean/requirements/1",
+  "claims": { "Inventory.reservation_safe": "56b0…" }
+}
+```
+
+1. Get the API's Lean project from its team, and review the theorems your code
+   relies on. Make sure they are about the function the endpoint implements.
+2. Generate requirements from that project, naming those theorems:
+
+   ```sh
+   zklean requirements --project vendor/inventory --module Inventory \
+     --claims Inventory.reservation_safe --out requirements.json
+   ```
+
+   This builds the project with Lake, Lean's build tool, which runs the
+   project's build code, so review or sandbox third-party projects first.
+
+3. Commit `requirements.json`.
+
+Instead of the API's project, you can write your own module that states the
+claims as `axiom`s about identical definitions: a claim's identity covers its
+statement and definitions, not its proof. If your code needs a weaker property
+than the API certifies, prove it from the API's claims in your own Lean code
+and require the API's claims.
+
+### Create a client
 
 Save this as `httpv.ts`:
 
@@ -101,50 +157,13 @@ import { createHTTPV } from "httpv";
 export const httpv = createHTTPV();
 ```
 
-The client verifies certificates with ZKLean's embedded WebAssembly verifier and
-its **verifying key**, the public key that identifies ZKLean's checker program.
-The key is pinned in the SDK, never taken from the API being checked. The
-client needs no native executable, prover, or Lean process.
+The client verifies certificates itself, with ZKLean's built-in verifier. That
+verifier uses a **verifying key**: a public key, fixed in the ZKLean package,
+that identifies ZKLean's proof checker. A certificate that verifies under it
+was produced by that checker. The key never comes from the API being checked,
+and the client needs no Lean installation or other native tools.
 
-To use another transport, pass `createHTTPV({ fetch })`; it must not follow
-redirects or relax TLS. To use another verifier, pass
-`createHTTPV({ backend })`. A backend has an `identity` string describing its
-trusted configuration and an async `verify(certificate)` returning a boolean.
-It is trusted to decide whether the proof establishes the certificate's claims
-and axioms.
-
-## Write your requirements
-
-Your requirements are a JSON file of claims and identities:
-
-```json
-{
-  "format": "zklean/requirements/1",
-  "claims": { "Inventory.reservation_safe": "56b0…" }
-}
-```
-
-1. Get the API's Lean source and review the theorems your code relies on.
-2. Generate requirements from that source, naming those theorems:
-
-   ```sh
-   zklean requirements --project vendor/inventory --module Inventory \
-     --claims Inventory.reservation_safe --out requirements.json
-   ```
-
-   `--project` builds that source with Lake, which runs its build code, so
-   review or sandbox third-party source first. You can also state the claims
-   yourself, as `axiom`s in your own module: an identity covers a statement,
-   not its proof, so an axiom matches a theorem with the same statement.
-
-3. Commit `requirements.json`.
-
-Make sure the claims are about the function the endpoint implements; their
-identities then fix that function's definition. If your code needs a weaker
-property than the API certifies, prove it from the API's claims in your own
-Lean code and require the API's claims.
-
-## Check an endpoint
+### Check an endpoint
 
 Describe the endpoint once, then check it:
 
@@ -166,10 +185,9 @@ if (result.status !== "verified")
   );
 ```
 
-`check` fetches the endpoint's certificate, verifies it, and compares its claim
-identities with your requirements. It never throws. A result that got as far as
-verifying carries `statementId`, which changes whenever the certified claims or
-axioms do.
+`check` fetches the endpoint's certificate, verifies it, and compares its
+claims with your requirements. It never throws; it returns a status and a
+reason:
 
 | Status         | Meaning                                                               | Reason                 |
 | -------------- | --------------------------------------------------------------------- | ---------------------- |
@@ -179,32 +197,33 @@ axioms do.
 
 `unknown` reasons:
 
-- discovery: `unavailable` (network error, timeout, redirect, an error status
-  other than 404, 405, 406 or 501, a URL that is not HTTPS, or an invalid URL
-  or method), `missing-certificate`
-  (no certificate for this method, or a server that does not support HTTPV),
-  and `invalid-advertisement` (a malformed discovery response);
-- the certificate: `invalid-certificate`, `forbidden-axiom`, `axiom-mismatch`,
-  and `verifier-unavailable`;
-- your configuration: `invalid-requirements`, including requirements with no
-  claims and a malformed `axioms`.
+- **Discovery failed:**
+  - `unavailable`: a network error, timeout or redirect; an error status other
+    than 404, 405, 406 or 501; a URL that is not HTTPS; or an invalid URL or
+    method.
+  - `missing-certificate`: no certificate for this method, or a server that
+    does not support HTTPV.
+  - `invalid-advertisement`: a malformed discovery response.
+- **The certificate failed:** `invalid-certificate`, `forbidden-axiom`,
+  `axiom-mismatch` or `verifier-unavailable`.
+- **Your configuration failed:** `invalid-requirements`, including requirements
+  with no claims and a malformed `axioms`.
 
-`axioms` lists the axioms you accept, by name and identity. `{}` accepts only
+`axioms` lists the axioms you accept, by name and identity; `{}` accepts only
 certificates that use none. A certificate using an axiom you did not list is
-`unknown / forbidden-axiom`, and one whose axiom has a different identity is
-`unknown / axiom-mismatch`.
+`forbidden-axiom`, and one whose axiom has a different identity is
+`axiom-mismatch`.
 
-For lower-level control, `httpv.query(url, { method })` returns the endpoint's
-certificate, throwing a `DiscoveryError` if discovery fails, and
-`httpv.compare(certificate, inventory)` runs the rest of the check. Discovery
-gives up after `timeout` milliseconds, 10 s by default, even if you also pass a
-`signal`; pass either in `query`'s options or as `check`'s second argument.
+A result that got as far as verifying also carries `statementId`, an identity
+of everything the certificate proves. Compare it to notice a new certificate;
+do not compare certificate bytes, which can change without the claims
+changing.
 
-## Recheck on a schedule
+### Recheck on a schedule
 
-APIs change without telling their clients, so recheck on an interval and gate
-dependent requests on the latest result. This is application code, not part of
-HTTPV:
+APIs change without telling their clients, so recheck on an interval and send
+dependent requests only while the latest result is `verified`. This is
+application code, not part of HTTPV:
 
 ```ts
 let latest = await httpv.check(inventory);
@@ -226,12 +245,27 @@ async function reserve(quantity: number) {
 }
 ```
 
-A check returns within `timeout` for discovery, but verification itself is not
-bounded; wrap `check` in your own deadline if you need one. Decide how old a
-result may be before you stop relying on it.
+Discovery gives up after 10 seconds, but verification itself is not bounded;
+wrap `check` in your own deadline if you need one. Decide how old a result may
+be before you stop relying on it.
 
-## Local development
+### Local development
 
 HTTPS is required and redirects are rejected. For a server on this machine
 (`localhost` or a loopback address), add `allowInsecureHttp: true` to the
 endpoint description passed to `check`.
+
+### Lower-level control
+
+- `httpv.query(url, { method })` returns the endpoint's certificate, or throws
+  a `DiscoveryError` with the reason.
+- `httpv.compare(certificate, inventory)` runs the rest of the check.
+- Discovery's `timeout`, in milliseconds, and an abort `signal` go in
+  `query`'s options or `check`'s second argument. The timeout applies even
+  with a signal.
+- `createHTTPV({ fetch })` uses another transport, which must not follow
+  redirects or relax TLS.
+- `createHTTPV({ backend })` uses another verifier. A backend has an `identity`
+  string naming its trusted configuration (unrelated to claim identities) and
+  an async `verify(certificate)` returning a boolean. It is trusted to decide
+  whether the proof establishes the certificate's claims and axioms.

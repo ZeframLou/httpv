@@ -1,6 +1,8 @@
 # Development
 
-For application integration, see the [usage guide](USAGE.md).
+This guide is for contributors to HTTPV: how to run its checks, and how to
+regenerate and release the example's certificates. To use HTTPV in an
+application, see the [usage guide](USAGE.md).
 
 ## Set up
 
@@ -11,7 +13,8 @@ bun install --frozen-lockfile
 bun run check
 ```
 
-ZKLean's SDK embeds its verifier, so the tests and the example need only Bun.
+`check` runs the type checker and the tests. They, and `bun run example`, need
+only Bun: ZKLean's package verifies certificates without native tools.
 
 ## Current state
 
@@ -25,63 +28,70 @@ current certificate format and are waiting to be re-proved. Until they are:
 
 ## Repository layout
 
-`examples/inventory/` holds the example's Lean project, requirements and
-certificates, and `scripts/models.ts` lists each module's claims and output
-path.
+- `src/`: the library. `server.ts` answers discovery, `client.ts` fetches and
+  checks certificates, and `protocol.ts` holds the wire format.
+- `tests/`: most tests make certificates from made-up identities and sign them
+  with a test-only key in place of a real proof, so they run in milliseconds.
+  `tests/groth16.test.ts` checks the real example certificates with ZKLean's
+  verifier.
+- `examples/inventory/`: the example's Lean project, requirements and
+  certificates. `scripts/models.ts` lists each module's claims and output
+  path.
+- `examples/upgrades.ts`: the example server and client.
 
-Most tests build certificates from made-up identities and sign them with a
-test-only Ed25519 backend, so they run in milliseconds. `tests/groth16.test.ts`
-uses the real certificates, whose proofs are Groth16 proofs, with the default
-verifier.
+## Check the example's artifacts
 
-## Regenerate artifacts
-
-These steps need a checkout of the ZKLean release in `package.json`, built as
-CI builds it in `.github/workflows/check.yml`, and `ZKLEAN_CLI` set to its
-`src/cli.ts`. ZKLean finds its other tools from the checkout.
+`bun run check:certificates` rebuilds the example's Lean project and confirms
+that the committed requirements, certificates and exports all match it. It
+needs the ZKLean command-line tool from the release named in `package.json`,
+set up as in ZKLean's
+[usage guide](https://github.com/ZeframLou/zklean/blob/v0.1.0/docs/USAGE.md#set-up),
+and `ZKLEAN_CLI` set to that checkout's `src/cli.ts`:
 
 ```sh
-bun run check:certificates  # every artifact matches its re-checked source
+export ZKLEAN_CLI=/path/to/zklean/src/cli.ts
+bun run check:certificates
 ```
 
-The check verifies each committed export with `zklean fetch --from` instead of
-downloading the certificate's source URL.
+It uses the committed exports, never downloading the certificates' sources.
+
+## Regenerate the example's artifacts
 
 `bun run prove` regenerates the requirements and each certificate, with the
-Lean export it was proved from, which the certificate names as its source.
-Review the diff before committing.
+export it was proved from, which the certificate names as its source. It needs
+ZKLean's prover setup from the same guide, including `ZKLEAN_GUEST_ELF`.
 
-Proving also needs ZKLean's prover build and the **guest program** attached to
-that ZKLean GitHub release: the program that checks Lean proofs inside SP1, so
-that the proofs verify under the key pinned in the SDK. ZKLean's
-`CONTRIBUTING.md` describes both; set `ZKLEAN_GUEST_ELF` to that guest. The
-first proof downloads SP1's 6.2 GB Groth16 circuit files to `~/.sp1/circuits`. Proving takes tens of
-minutes to hours and several GB of memory. Run one proof at a time and bound
-its resources, for example:
+Each example proof takes about 5 to 15 minutes and up to 20 GB of memory on a
+12-core machine. Run one proof at a time. These variables cap the prover's
+threads and the heap of its final proving step, and allow up to a day per
+proof:
 
 ```sh
-RAYON_NUM_THREADS=2 GOMAXPROCS=2 GOMEMLIMIT=6GiB GOGC=20 \
+RAYON_NUM_THREADS=6 GOMAXPROCS=2 GOMEMLIMIT=6GiB GOGC=20 \
 ZKLEAN_PROVE_TIMEOUT=86400000 bun run prove
 ```
+
+Review the diff before committing.
 
 ## Continuous integration
 
 CI checks formatting, types and tests, and runs the example with no native
-tools or Lean installed. A second job builds the pinned ZKLean CLI and runs
+tools or Lean installed. A second job builds the pinned ZKLean tool and runs
 `bun run check:certificates`. While `ZeframLou/zklean` is private, set the
 `ZKLEAN_READ_TOKEN` Actions secret to a read-only token with Contents access to
 it.
 
 ## Release
 
-Prove the example on the commit to be released, commit the certificates and
-their exports, and tag it with the `version` in `package.json`, such as
-`v0.1.0`. Each certificate names its export at that tag, so clients can fetch
-its definitions only once the tag is pushed. Then, after ZKLean's SDK is
-published to npm, publish HTTPV:
+1. Regenerate the example's artifacts on the commit to be released, and commit
+   the certificates and their exports.
+2. Tag that commit with the `version` in `package.json`, such as `v0.1.0`, and
+   push the tag. Each certificate names its export at that tag, so clients can
+   fetch its definitions only once the tag exists.
+3. After ZKLean's package is published to npm, publish HTTPV:
 
-```sh
-bun run check
-npm pack --dry-run
-npm publish
-```
+   ```sh
+   bun run check
+   npm pack --dry-run  # lists the files that will be published
+   npm publish
+   ```
