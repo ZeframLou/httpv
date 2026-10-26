@@ -5,15 +5,16 @@ request.**
 
 HTTPV is an HTTP protocol and TypeScript library for Bun. API teams publish
 machine-checkable proofs of how their endpoints behave. Client teams check
-those proofs before relying on them. Ordinary requests and responses are
-unchanged.
+those proofs with one function call, in under a second, with no Lean needed.
+Ordinary requests and responses are unchanged.
 
-- **Client teams** stop calling an API the moment it stops guaranteeing what
-  their code needs.
+- **Client teams** stop calling an API as soon as their next check finds it no
+  longer guarantees what their code needs.
 - **API teams** get a contract clients can verify, so a breaking change shows
   up in review instead of in a customer's incident.
 
-Both sides take part: the API team publishes the proofs that clients check.
+It works with APIs whose team publishes proofs, so it suits internal services
+and partner APIs first.
 
 ## Why
 
@@ -34,8 +35,10 @@ certificate on a schedule:
   block the request, switch provider or alert someone before a bad order goes
   through.
 
-Any change to the function, even a refactor, fails the check until you review
-it, so nothing changes under you unseen.
+Any change to the function, even a refactor, fails the check until your team
+reviews and accepts it, so nothing changes under you unseen. The proof covers
+the Lean model, and the API team keeps the model in step with its code, as it
+does its tests.
 
 ## See it work
 
@@ -43,15 +46,15 @@ it, so nothing changes under you unseen.
 inventory endpoint and checks each one the way a client would:
 
 ```text
-$ bun run example
+$ git clone https://github.com/ZeframLou/httpv.git && cd httpv
+$ bun install && bun run example
 V1: verified (exact-match) -> {"remaining":2}
 V2 adds a guarantee: verified (exact-match) -> {"remaining":1}
 V3 accepts backorders: incompatible (requirements-not-met) -> request blocked
 ```
 
 Version 2 adds a guarantee and still passes. Version 3 starts accepting
-backorders, so the client blocks it. To run it, clone the repository and follow
-the [setup](docs/DEVELOPMENT.md).
+backorders, so the client blocks it.
 
 ## How it works
 
@@ -68,8 +71,8 @@ the [setup](docs/DEVELOPMENT.md).
    [ZKLean](https://github.com/ZeframLou/zklean): about 5 to 15 minutes for a
    small model. The result is a certificate, typically under 1 KB.
 2. The server answers an HTTP `OPTIONS` request to the endpoint's own URL with
-   that certificate. It also publishes one file of the Lean definitions behind
-   it.
+   that certificate. It also publishes, as one file, the Lean definitions the
+   certificate describes.
 3. The client verifies the certificate in under a second, without Lean
    installed, and checks that it still proves every guarantee the client
    relies on.
@@ -135,15 +138,16 @@ implementations.
   check passes only if the certificate proves all of them.
 - **Axioms:** statements a proof assumes without proving. A false axiom can
   prove anything, so your client accepts only the ones it lists, normally
-  Lean's standard three: `propext`, `Quot.sound` and `Classical.choice`.
+  Lean's three standard axioms (`standardAxioms`).
 
 ## Trust model
 
-Clients verify each certificate themselves; they trust only ZKLean's checker
-and its cryptography, their own requirements, and the axioms they accept. They
-still trust the server to run code that behaves as its Lean function describes.
-HTTPV cannot detect a server that misbehaves behind an unchanged certificate,
-or a change between two checks.
+Clients verify each certificate themselves, trusting only ZKLean's checker and
+its cryptography, their own requirements, and the axioms they accept. A pass
+means the API's Lean model has every property the client requires; the client
+trusts the server to run code that behaves as that model does. HTTPV does not
+detect a server that misbehaves behind an unchanged certificate, or a change
+between two checks.
 
 ## License
 
