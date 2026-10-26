@@ -28,10 +28,16 @@ packages.
 ### Model the endpoint in Lean
 
 Write the endpoint's behavior as a Lean function, and prove theorems about it
-that clients can rely on. Create a project with Lake, Lean's build tool:
-`lake new inventory lib`. Set the Lean version in its `lean-toolchain` file to
-`leanprover/lean4:v4.35.0`, the version ZKLean requires, and replace
-`Inventory.lean` with the model. A reservation endpoint might be:
+that clients can rely on. Create a project with Lake, Lean's build tool, and
+set the Lean version in its `lean-toolchain` file to the one ZKLean requires:
+
+```sh
+lake new inventory lib
+cd inventory
+echo leanprover/lean4:v4.35.0 > lean-toolchain
+```
+
+Put the model in `Inventory/Basic.lean`, replacing its contents:
 
 ```lean
 namespace Inventory
@@ -40,13 +46,20 @@ namespace Inventory
 def reserve (stock quantity : Nat) : Option Nat :=
   if quantity ≤ stock then some (stock - quantity) else none
 
-/-- An accepted reservation never exceeds the available stock. -/
-theorem reservation_safe (stock quantity remaining : Nat)
-    (accepted : reserve stock quantity = some remaining) : quantity ≤ stock := by
-  unfold reserve at accepted
-  split at accepted <;> simp_all
-
 end Inventory
+```
+
+Put the theorems in `Inventory.lean`, replacing its contents:
+
+```lean
+import Inventory.Basic
+
+/-- An accepted reservation never exceeds the available stock. -/
+theorem Inventory.reservation_safe (stock quantity remaining : Nat)
+    (accepted : Inventory.reserve stock quantity = some remaining) :
+    quantity ≤ stock := by
+  unfold Inventory.reserve at accepted
+  split at accepted <;> simp_all
 ```
 
 Your server's code must behave as this function does; HTTPV certifies the
@@ -63,9 +76,8 @@ zklean check --project . --module Inventory \
   --claims Inventory.reservation_safe --axioms propext
 ```
 
-`--axioms` names the axioms the proofs may use; `check` fails with
-`forbidden-axiom` if they use another. To see which they use, add
-`#print axioms Inventory.reservation_safe` to the Lean file.
+`--axioms` names the axioms the proofs may use; `check` fails, naming the
+axiom, if they use another.
 
 Proving takes about 5 to 15 minutes and up to 20 GB of memory on a 12-core
 machine, and the first proof downloads 6.2 GB of proving files. It needs the
@@ -87,16 +99,26 @@ zklean prove --project . --module Inventory \
   certificate, as `certs/reservations.ndjson`; publish it at that URL, for
   example as a static file.
 
-The export also contains your proofs. To keep them private, write a module that
-states each claim as an `axiom` instead, and publish its export; a claim stated
-as an axiom has the same identity as the proved theorem:
+The export also contains your proofs. To keep them private, state each claim as
+an `axiom` in a module that imports only the model, such as
+`Inventory/Spec.lean`:
 
-```sh
-zklean export --project . --module InventorySpec \
-  --claims Inventory.reservation_safe --out certs/reservations.ndjson
+```lean
+import Inventory.Basic
+
+/-- The claim, stated without its proof. -/
+axiom Inventory.reservation_safe (stock quantity remaining : Nat)
+    (accepted : Inventory.reserve stock quantity = some remaining) :
+    quantity ≤ stock
 ```
 
-A certificate is typically under 1 KB, whatever the size of the proofs.
+A claim stated as an axiom has the same identity as the proved theorem, so
+publish this module's export instead:
+
+```sh
+zklean export --project . --module Inventory.Spec \
+  --claims Inventory.reservation_safe --out certs/reservations.ndjson
+```
 
 ### Serve the certificate
 
@@ -152,10 +174,12 @@ in a JSON file:
 }
 ```
 
-1. Get the API's Lean project from its team, and review the theorems your code
-   relies on. Make sure they are about the function the endpoint implements.
-   To confirm the project is the one certified, save the endpoint's
-   certificate and check the project's export against it:
+1. Clone the API's Lean project, from its team, into `vendor/inventory`, and
+   review the theorems your code relies on. Make sure they are about the
+   function the endpoint implements. To confirm the project is the one
+   certified, save the endpoint's certificate and check the project's export
+   against it. The `zklean` commands build the project with Lake, which runs
+   its build code, so review or sandbox a third-party project first:
 
    ```sh
    bun -e 'import { createHTTPV } from "httpv";
@@ -181,9 +205,6 @@ in a JSON file:
    With `--export checked.ndjson` in place of `--project` and `--module`, the
    same command uses the export checked in step 1 instead of building the
    project.
-
-   This builds the project with Lake, Lean's build tool, which runs the
-   project's build code, so review or sandbox third-party projects first.
 
 3. Commit `requirements.json`.
 
@@ -266,10 +287,10 @@ On `incompatible`, the API changed a claim you rely on or the function it is
 about. Review the API's new Lean project; if your code still holds, regenerate
 `requirements.json` from it and commit it.
 
-A result that got as far as verifying also carries `statementId`, an identity
-of everything the certificate proves. Compare it to notice a new certificate;
-do not compare certificate bytes, which can change without the claims
-changing.
+A result that got as far as verifying also carries `statementId`, ZKLean's
+**statement digest**: a hash of everything the certificate proves. Compare it to
+notice a new certificate; do not compare certificate bytes, which can change
+without the claims changing.
 
 ### Recheck on a schedule
 

@@ -37,8 +37,8 @@ Groth16 [GROTH16] proof. "Certificate", "claim", "axiom", "identity" and
 - a **certificate** names its proved claims and the axioms they use, each with
   an **identity** that covers its name, its statement and everything the
   statement refers to, but not its proof;
-- the **statement identity**, the identity ZKLean gives a certificate's claims
-  and axioms together;
+- the **statement digest** [ZKLEAN, Section 3.4] is the hash of a certificate's
+  `format`, `claims` and `axioms`;
 - **requirements** list claims, with identities, that a certificate must
   prove.
 
@@ -170,13 +170,15 @@ A client MUST:
    chose in advance, never ones the response selects, accepting only axioms in
    its axiom policy with the same identity; and
 2. require every claim in its requirements to appear in the certificate's
-   `claims` with the same identity. Other claims are allowed.
+   `claims` with the same identity. Other claims are allowed. Requirements
+   with no claims MUST yield `unknown`, since they would accept any
+   certificate.
 
-| Result         | Meaning                                                                   |
-| -------------- | ------------------------------------------------------------------------- |
-| `verified`     | The certificate verifies and certifies every required claim.              |
-| `incompatible` | It verifies, but a required claim is missing or has another identity.     |
-| `unknown`      | Discovery failed, it does not verify, or the requirements cannot be read. |
+| Result         | Meaning                                                                                        |
+| -------------- | ---------------------------------------------------------------------------------------------- |
+| `verified`     | The certificate verifies and certifies every required claim.                                   |
+| `incompatible` | It verifies, but a required claim is missing or has another identity.                          |
+| `unknown`      | Discovery failed, it does not verify under the axiom policy, or the requirements are unusable. |
 
 Each result carries a reason. Section 3.3 defines the reasons for failed
 discovery; other reasons are local to each implementation.
@@ -227,7 +229,7 @@ A certificate has no validity period and is bound to no origin or deployment: an
 old certificate served by a stale replica or rolled-back deployment still
 verifies. Groth16 proofs can be re-randomized, so clients MUST NOT treat a
 change in certificate bytes as a change in what is certified; the statement
-identity [ZKLEAN] identifies that.
+digest identifies that.
 
 ### 5.5. Sources and resource use
 
