@@ -76,4 +76,11 @@ it.
 Prove the example on the commit to be released, commit the certificates and
 their exports, and tag it with the `version` in `package.json`, such as
 `v0.1.0`. Each certificate names its export at that tag, so push the tag before
-relying on `check:certificates` downloading sources.
+relying on `check:certificates` downloading sources. Then, after ZKLean's SDK
+is published to npm, publish HTTPV:
+
+```sh
+bun run check
+npm pack --dry-run
+npm publish
+```

@@ -77,10 +77,10 @@ checks.
 
 ## Get started
 
-Install HTTPV with the ZKLean SDK it builds on, both at release `v0.1.0`:
+Install HTTPV with the ZKLean SDK it builds on:
 
 ```sh
-bun add github:ZeframLou/zklean#v0.1.0 github:ZeframLou/httpv#v0.1.0
+bun add zklean@0.1.0 httpv@0.1.0
 ```
 
 HTTPV runs on [Bun](https://bun.sh/) 1.4.4 or newer.

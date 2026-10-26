@@ -5,7 +5,7 @@
 - Lead with the purpose, result, or next action. Use plain language and concrete examples.
 - Open the README by defining the project and its benefit. Introduce domain examples after that definition.
 - Explain the motivation before the mechanisms: client correctness depends on assumptions about independently evolving external APIs. Keep detailed integration instructions in the usage guide.
-- Document consumer installation from the release tag, as `bun add github:ZeframLou/zklean#v0.1.0 github:ZeframLou/httpv#v0.1.0`. Never point installation at commit hashes, CI artifacts or packed tarballs. Repository credentials belong only in contributor instructions.
+- Document consumer installation from npm, as `bun add zklean@0.1.0 httpv@0.1.0`. Never point installation at commit hashes, CI artifacts or packed tarballs. Git dependencies and repository credentials belong only in contributor instructions.
 - Omit development history, unsolicited project-status commentary, version announcements, and implementation inventories unless the task requires them.
 - Explain dependencies and internal mechanisms only when the reader needs them to make a decision or perform an action.
 - State relevant requirements and limitations directly. Keep instructions accurate; do not hide prerequisites or claim that an unavailable workflow works.
