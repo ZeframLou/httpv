@@ -98,8 +98,8 @@ zklean prove --project . --module Inventory \
 - `--source` is the URL where you will publish the **export**: a file of
   Lean's compiled form of the definitions behind the claims, from which anyone
   can recompute the claims' identities. `prove` writes it beside the
-  certificate, as `certs/reservations.ndjson`; publish it at that URL, for
-  example as a static file.
+  certificate, as `certs/reservations.ndjson`; publish it at exactly that
+  `https` URL, served directly with no redirect, for example as a static file.
 
 The export also contains your proofs. To keep them private, state each claim as
 an `axiom` in a module that imports only the model, such as
@@ -198,8 +198,8 @@ in a JSON file:
      --from api.ndjson --out checked.ndjson
    ```
 
-   `fetch` fails, listing the mismatches, unless the project reproduces every
-   identity in the certificate.
+   `fetch` fails, listing the mismatches, unless the project reproduces the
+   identity of every claim and every non-standard axiom in the certificate.
 
 2. Generate requirements from that project, naming those theorems:
 
@@ -286,14 +286,14 @@ reason:
   - `forbidden-axiom`: it uses an axiom you did not accept.
   - `axiom-mismatch`: it uses an accepted axiom's name with another identity.
   - `verifier-unavailable`: the verifier could not run.
-- **Your configuration failed:** `invalid-requirements`, including requirements
-  with no claims and a malformed `axioms`.
+- **Your configuration failed:** `invalid-requirements`: the requirements file
+  is missing, malformed or has no claims, or `axioms` is malformed.
 
 On `incompatible`, the API changed a claim you rely on or the function it is
 about. Review the API's new Lean project; if your code still holds, regenerate
 `requirements.json` from it and commit it.
 
-A result that got as far as verifying also carries `statementId`, ZKLean's
+`verified` and `incompatible` results also carry `statementId`, ZKLean's
 **statement digest**: a hash of everything the certificate proves. Compare it to
 notice a new certificate; do not compare certificate bytes, which can change
 without the claims changing.

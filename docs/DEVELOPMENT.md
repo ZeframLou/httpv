@@ -37,8 +37,9 @@ current certificate format and are waiting to be re-proved. Until they are:
   `tests/groth16.test.ts` checks the real example certificates with ZKLean's
   verifier.
 - `examples/inventory/`: the example's Lean project, requirements and
-  certificates. `scripts/models.ts` lists each module's claims and output
-  path.
+  certificates.
+- `scripts/`: the offline scripts. `scripts/models.ts` lists each example
+  module's claims and output path.
 - `examples/upgrades.ts`: the example server and client.
 
 ## Check the example's artifacts
@@ -76,7 +77,8 @@ Each proof times out after ZKLean's default of one hour. To change it, set
 `ZKLEAN_PROVE_TIMEOUT` in milliseconds; `bun run prove` passes it to ZKLean's
 `--timeout`.
 
-Review the diff before committing.
+Review the diff before committing: only the artifacts of models you changed
+should differ.
 
 ## Continuous integration
 

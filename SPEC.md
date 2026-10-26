@@ -30,7 +30,7 @@ and only when, they appear in all capitals, as shown here.
 
 "Resource", "target URI", "method" and "origin server" are used as in HTTP
 Semantics [RFC9110]. ZKLean [ZKLEAN] checks Lean [LEAN] proofs inside the SP1
-zero-knowledge virtual machine [SP1] and summarizes the result as a short
+virtual machine [SP1] and summarizes the result as a short
 Groth16 [GROTH16] proof. "Certificate", "claim", "axiom", "identity" and
 "requirements" are as in ZKLean:
 
@@ -98,7 +98,8 @@ despite [RFC9110], and MUST NOT follow redirects.
 
 A server MUST treat an `OPTIONS` request as discovery if and only if its target
 is not `*`, its `Accept` header field lists the media range
-`application/httpv+json` itself, not only a wildcard, without the weight `q=0`
+`application/httpv+json` itself, compared case-insensitively and ignoring
+parameters other than `q`, not only a wildcard, without the weight `q=0`
 [RFC9110, Section 12.4.2], and it carries no `Access-Control-Request-Method`,
 which would make it a CORS preflight [FETCH]. Every other request is ordinary.
 
@@ -159,7 +160,7 @@ the outcome as its reason.
 | Any other non-`200` status                                                    | `unavailable`           |
 | Content over the client's bound, not UTF-8 JSON, or not the object above      | `invalid-advertisement` |
 | The object lacks the endpoint's method                                        | `missing-certificate`   |
-| That method's certificate is not well formed [ZKLEAN]                         | `invalid-advertisement` |
+| That method's certificate is not well formed [ZKLEAN, Section 3.3]            | `invalid-advertisement` |
 | Otherwise                                                                     | The certificate         |
 
 `OPTIONS` responses are not cacheable [RFC9110, Section 9.3.7], so a client
@@ -328,9 +329,9 @@ Template for a future registration:
 
 An inventory service models stock as a count of units, `UnitInventory.Stock`,
 and `POST /units` as the function `UnitInventory.POST_units`, which reserves one
-unit or rejects empty stock. It proves `UnitInventory.Conserves`: every
-accepted reservation consumes exactly one unit, and only empty stock is
-rejected:
+unit or rejects empty stock. It proves `UnitInventory.conserves`, which states
+`UnitInventory.Conserves`: every accepted reservation consumes exactly one unit,
+and only empty stock is rejected:
 
 ```lean
 theorem UnitInventory.conserves (stock : UnitInventory.Stock) :
