@@ -1,43 +1,59 @@
 # HTTPV
 
-**Know when an API stops guaranteeing what your code depends on, before a bad
-request goes through.**
+**Formal verification for HTTP endpoints**
 
-HTTPV is a convention for serving proof certificates from HTTP endpoints, and a
-TypeScript library for Bun that serves and checks them. API teams publish
-machine-checkable proofs of how their endpoints behave. Client teams review a
-guarantee once and pin it; after that they check each proof with one function
-call, in under a second, with no Lean installed.
-Ordinary requests and responses are unchanged.
-
-API teams get a contract clients can verify, so a breaking change shows up in
-review instead of in a customer's incident.
-
-The API team must publish proofs, so HTTPV fits internal services and partner
-APIs.
+HTTPV is a standard for serving [ZKLean](https://github.com/ZeframLou/zklean)
+certificates from HTTP endpoints, and a TypeScript library for Bun that serves
+and checks them. API teams publish formal specs of how their endpoints behave,
+written in [Lean](https://lean-lang.org/) (a language for machine-checked
+proofs), with a 1 KB certificate that the specs are proved. Client teams check
+it in under a second, without the proofs and without installing Lean.
 
 ## Why
 
-Docs and changelogs are promises your code can't check. Say your checkout
-relies on an inventory service's `POST /reservations` never reserving more
-stock than it has. One day the service starts accepting backorders. Your code
-hasn't changed and every request still succeeds, but you are now selling stock
-that doesn't exist, and nothing tells you.
+Say your checkout relies on an inventory service's `POST /reservations` never
+reserving more stock than it has. One day the service starts accepting
+backorders. Your code hasn't changed and every request still succeeds, but you
+are now selling stock that doesn't exist, and nothing tells you.
 
-With HTTPV, the inventory team models the endpoint as a small function in Lean,
-a language for writing machine-checked proofs. It proves "a reservation never
-exceeds available stock" and publishes a certificate of that proof next to the
-endpoint. Your team reviews that theorem once, in Lean, and pins its
-fingerprint with `zklean requirements`. Your client then rechecks the
-certificate on a schedule:
+Docs and changelogs can't catch this; they are promises your code can't check.
+Formal proofs can, but today you would have to fetch the inventory team's Lean
+project and re-check its proofs on every deploy. Those proofs are thousands of
+lines for a small service and 10k–100k+ for a production one, so nobody does,
+and you find out from an incident.
 
-- **They add a guarantee:** the check still passes.
-- **They drop or change one you rely on:** the check fails, so your code can
-  block the request, switch provider or alert someone before a bad order goes
-  through.
+With HTTPV, the inventory team proves "a reservation never exceeds available
+stock" in Lean and serves a ZKLean certificate next to the endpoint. The
+certificate carries a zero-knowledge proof that a valid proof exists, so your
+client checks it in under a second. When the guarantee you rely on changes, the
+check fails and your code blocks the request, switches provider or alerts
+someone before a bad order goes through.
 
-Any change to the function, even a refactor, fails your check until your team
-reviews it.
+Your own formal specs can then build on the inventory team's: their proved
+guarantees become dependencies of your proofs.
+
+## What you get
+
+- **Breaking changes caught before the request.** A changed or dropped
+  guarantee fails the check; added guarantees and unrelated changes pass.
+- **Cheap checks.** One function call, under a second, with no Lean installed.
+- **Precise claims.** Each guarantee is pinned by a fingerprint of its exact
+  statement and the endpoint model it describes, so a rename can't hide a
+  change.
+- **A drop-in server.** `serve` wraps your existing handler. Ordinary requests
+  and responses are unchanged.
+- **Explicit assumptions.** Your client accepts only the axioms (unproved
+  assumptions) you list.
+
+## Install
+
+```sh
+bun add zklean@0.1.0 httpv@0.1.0
+```
+
+HTTPV runs on [Bun](https://bun.sh/) 1.4.4 or newer. Proving certificates uses
+ZKLean's command-line tool; see its
+[usage guide](https://github.com/ZeframLou/zklean/blob/v0.1.0/docs/USAGE.md#set-up).
 
 ## See it work
 
@@ -52,34 +68,7 @@ V2 adds a guarantee: verified (exact-match) -> {"remaining":1}
 V3 accepts backorders: incompatible (requirements-not-met) -> request blocked
 ```
 
-## How it works
-
-1. The API author proves the guarantees once per release with
-   [ZKLean](https://github.com/ZeframLou/zklean), in about 5 to 15 minutes for a
-   small model. The result is a certificate under 1 KB.
-2. The server answers an HTTP `OPTIONS` request to the endpoint's own URL with
-   that certificate.
-3. The client verifies the certificate without Lean and checks that it proves
-   every requirement.
-
-## Concepts
-
-- **Certificate:** a small file that lists proved theorems, called **claims**,
-  with a cryptographic receipt that ZKLean's Lean checker accepted the proofs.
-- **Identity:** a fingerprint of a claim and the code it is about. Change
-  either and the identity changes; re-proving the same thing doesn't.
-- **Requirements:** the claims your code relies on, with their identities.
-- **Axioms:** statements a proof assumes without proving. A false axiom can
-  prove anything, so your client accepts only the ones it lists, normally
-  Lean's three standard axioms (`standardAxioms`).
-
-## Get started
-
-HTTPV runs on [Bun](https://bun.sh/) 1.4.4 or newer. Install it with ZKLean:
-
-```sh
-bun add zklean@0.1.0 httpv@0.1.0
-```
+## Example
 
 **Server:** serve each endpoint's certificate alongside your existing handler.
 
@@ -116,18 +105,57 @@ if (result.status === "verified")
   });
 ```
 
-The [usage guide](docs/USAGE.md) walks both teams through it: writing the Lean
-model, generating `requirements.json`, and rechecking on a schedule. The
-[specification](SPEC.md) defines the wire format for other implementations.
+## Publish, pin, check
+
+1. **Publish.** The API team proves its guarantees with ZKLean once per release,
+   in about 5 to 15 minutes for a small model, and serves the certificate.
+2. **Pin.** Your team reviews the theorems it relies on once, in Lean, and
+   records their fingerprints in `requirements.json` with
+   `zklean requirements`.
+3. **Check.** Your client checks the endpoint before relying on it, or on a
+   schedule you choose. Only a change to a guarantee you pinned fails.
+
+## How it works
+
+```text
+client ── OPTIONS /reservations ─────────────▶ server (serve)
+       ◀─ {"format":"httpv/1",
+            "certificates":{"POST": certificate}} ─
+client: verify certificate (ZKLean) ─▶ compare with requirements ─▶ status
+```
+
+- **Discovery.** A client asks for an endpoint's certificates with an `OPTIONS`
+  request to the endpoint's own URL. The server answers with an
+  `application/httpv+json` document mapping each HTTP method to its ZKLean
+  certificate, with `Cache-Control: no-store`.
+- **Server.** `serve` answers those `OPTIONS` requests for the routes you
+  configure and passes every other request, with all its arguments, to your
+  handler.
+- **Client.** `createHTTPV().check` fetches the document over https, refusing
+  redirects, within one deadline for the whole check. It verifies the
+  certificate with ZKLean's verifier under your axioms, then compares its
+  claims with your requirements by name and fingerprint. The result is
+  `verified`, `incompatible` (the certificate is valid but doesn't prove what
+  you require) or `unknown` (discovery or verification failed), with a reason.
+- **Certificates** come from ZKLean; its
+  [README](https://github.com/ZeframLou/zklean#how-it-works) explains how they
+  are proved and verified.
 
 ## Trust model
 
 Clients verify each certificate themselves, trusting only ZKLean's checker and
 its cryptography, their own requirements, and the axioms they accept. A pass
 means the API's Lean model has every property the client requires; the client
-trusts the server to run code that behaves as that model does. HTTPV does not
-detect a server that misbehaves behind an unchanged certificate, or a change
+still trusts the server to run code that behaves as that model does. HTTPV
+cannot see a server that misbehaves behind a valid certificate, or a change
 between two checks.
+
+## More
+
+- The [usage guide](docs/USAGE.md) walks both teams through writing the Lean
+  model, generating `requirements.json` and checking on a schedule.
+- The [specification](SPEC.md) defines the wire format for other
+  implementations.
 
 ## License
 
