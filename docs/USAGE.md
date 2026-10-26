@@ -31,7 +31,7 @@ zklean prove --project . --module Inventory \
 `--timeout` is in milliseconds; the default is one hour. Proving runs offline,
 takes tens of minutes to hours and several GB of memory, and needs ZKLean's
 prover build and the guest program from its release
-(`gh release download v0.1.0 --repo ZeframLou/zklean --pattern zklean-guest`),
+(`curl -fLO https://github.com/ZeframLou/zklean/releases/download/v0.1.0/zklean-guest`),
 as its `CONTRIBUTING.md` describes.
 
 A certificate is typically under 1 KB; its size grows with the number of claims

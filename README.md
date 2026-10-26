@@ -126,3 +126,7 @@ with `bun run example` ([setup](docs/DEVELOPMENT.md)).
 The [usage guide](docs/USAGE.md) covers writing requirements, accepting
 axioms, and rechecking on a schedule. The [protocol specification](SPEC.md)
 defines the wire format for other implementations.
+
+## License
+
+[MIT NON-AI License](LICENSE).
