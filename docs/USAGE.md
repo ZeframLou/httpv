@@ -12,8 +12,9 @@ Generating certificates and requirements needs the
 [ZKLean CLI](https://github.com/ZeframLou/zklean), run from a release checkout
 (`git clone --branch v0.1.0 https://github.com/ZeframLou/zklean`) as
 `bun src/cli.ts` with its native checker and `lean4export` built (ZKLean's
-`CONTRIBUTING.md`); this guide writes it as `zklean`. Lean projects must select `leanprover/lean4:v4.35.0` in
-`lean-toolchain`. Checking certificates needs only the installed packages.
+`CONTRIBUTING.md`); this guide writes it as `zklean`. Lean projects must
+select `leanprover/lean4:v4.35.0` in `lean-toolchain`. Checking certificates
+needs only the installed packages.
 
 ## Serve a certificate
 
