@@ -54,9 +54,10 @@ Review the diff before committing.
 Proving also needs ZKLean's prover build and the **guest program** attached to
 that ZKLean GitHub release: the program that checks Lean proofs inside SP1, so
 that the proofs verify under the key pinned in the SDK. ZKLean's
-`CONTRIBUTING.md` describes both; set `ZKLEAN_GUEST_ELF` to that guest. The first proof downloads SP1's Groth16 circuit files. Proving takes
-tens of minutes to hours and several GB of memory. Run one proof at a time and
-bound its resources, for example:
+`CONTRIBUTING.md` describes both; set `ZKLEAN_GUEST_ELF` to that guest. The
+first proof downloads SP1's Groth16 circuit files. Proving takes tens of
+minutes to hours and several GB of memory. Run one proof at a time and bound
+its resources, for example:
 
 ```sh
 RAYON_NUM_THREADS=2 GOMAXPROCS=2 GOMEMLIMIT=6GiB GOGC=20 \
