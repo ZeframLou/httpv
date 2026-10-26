@@ -16,7 +16,8 @@ bun run check
 ```
 
 `check` runs the type checker and the tests. They, and `bun run example`, need
-only Bun: ZKLean's package verifies certificates without native tools.
+only Bun: ZKLean's package verifies certificates without native tools. Run
+`bun run format` before committing; CI also runs `bun run format:check`.
 
 ## Current state
 
@@ -64,10 +65,10 @@ export it was proved from, which the certificate names as its source. It needs
 `ZKLEAN_CLI` as above and ZKLean's prover setup from the same guide, including
 `ZKLEAN_GUEST_ELF`.
 
-Each example proof takes about 5 to 15 minutes and up to 20 GB of memory on a
-12-core machine. Run one proof at a time. These variables cap the prover's
-threads and the heap of its final proving step, which use more memory without
-the caps:
+Each example proof takes about 5 to 15 minutes and, with the caps below, up to
+20 GB of memory on a 12-core machine. Run one proof at a time. These variables
+cap the prover's threads and the heap of its final proving step, which use more
+memory without them:
 
 ```sh
 RAYON_NUM_THREADS=6 GOMAXPROCS=2 GOMEMLIMIT=6GiB GOGC=20 bun run prove

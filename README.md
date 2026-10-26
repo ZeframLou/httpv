@@ -16,9 +16,9 @@ are now selling stock that does not exist.
 
 With HTTPV, the service models the endpoint as a function, states its guarantee
 ("a reservation never exceeds available stock") as a mathematical statement
-about that function, proves it, and publishes a certificate of that proof next
-to the endpoint. Your client lists the guarantees it relies on and rechecks the
-certificate on a schedule:
+about that function, proves it, and publishes a certificate of that proof, a
+small file anyone can check by machine, next to the endpoint. Your client lists
+the guarantees it relies on and rechecks the certificate on a schedule:
 
 - If the service adds guarantees without changing the function your
   guarantees describe, the check passes.

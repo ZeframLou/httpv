@@ -81,8 +81,8 @@ axiom, if they use another.
 
 Proving takes about 5 to 15 minutes and up to 20 GB of memory on a 12-core
 machine, and the first proof downloads 6.2 GB of proving files. It needs the
-prover build (the native tool built with SP1's prover) and `ZKLEAN_GUEST_ELF`
-from ZKLean's
+prover build (the native tool built with SP1's prover) and `ZKLEAN_GUEST_ELF`,
+the path to ZKLean's downloaded checker program, both from ZKLean's
 [Set up](https://github.com/ZeframLou/zklean/blob/v0.1.0/docs/USAGE.md#set-up),
 which needs Go 1.24, `protoc` and a C compiler. Prove the theorems into a certificate
 before deployment:
@@ -347,7 +347,7 @@ endpoint description passed to `check`.
   with a signal.
 - `createHTTPV({ fetch })` uses another transport, which must not follow
   redirects or relax TLS.
-- `createHTTPV({ backend })` uses another verifier. A backend has an `identity`
-  string, a label for its trusted configuration unrelated to claim identities,
-  and an async `verify(certificate)` returning a boolean. It is trusted to
-  decide whether the proof establishes the certificate's claims and axioms.
+- `createHTTPV({ backend })` uses another verifier. A backend has a label for
+  its trusted configuration, `identity` (unrelated to claim identities), and an
+  async `verify(certificate)` returning a boolean. It is trusted to decide
+  whether the proof establishes the certificate's claims and axioms.

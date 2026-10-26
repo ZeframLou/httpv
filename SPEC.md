@@ -54,6 +54,11 @@ In addition:
   certificates to use.
 - **Verifier:** a client's implementation of ZKLean verification, with the
   verifier key that identifies ZKLean's checker.
+- **Advertisement:** the JSON object a server returns for discovery
+  (Section 3.2).
+- **Labeled:** a response is labeled `application/httpv+json` when its
+  `Content-Type` media type, compared case-insensitively and ignoring
+  parameters, is `application/httpv+json`.
 
 ## 2. Overview
 
@@ -133,8 +138,12 @@ SHOULD stay under 64 KiB and SHOULD carry `Cache-Control: no-store`:
 
 The object has exactly the members `format` (`"httpv/1"`) and `certificates`, a
 JSON object that maps each method token [RFC9110, Section 9.1] to that
-endpoint's certificate. A client reads only the member for its endpoint's
-method and ignores the others, whatever they contain. Method names are
+endpoint's certificate. A client MUST treat as not this object any content
+that is not a JSON object with exactly these two members, has another
+`format`, or whose `certificates` is not an object. It reads only the member
+of `certificates` for its endpoint's method, and MUST NOT validate the other
+members' names or values. A server MUST NOT repeat a member name, as I-JSON
+requires; a client need not detect repeated names. Method names are
 case-sensitive, but Fetch [FETCH] uppercases `DELETE`, `GET`, `HEAD`,
 `OPTIONS`, `POST` and `PUT`, so servers MUST write those six in uppercase, and a
 client whose method matches one of them, ignoring case, MUST look it up in
@@ -148,23 +157,22 @@ labeled `application/httpv+json`.
 
 ### 3.3. Client processing
 
-A response is **labeled** `application/httpv+json` when its `Content-Type`
-media type, compared case-insensitively and ignoring parameters, is
-`application/httpv+json`. A client MUST accept up to 64 KiB of decoded content
+A client MUST accept up to 64 KiB of decoded content
 and MUST bound what it reads. It classifies the response by the first matching
 row. Every outcome but the last makes the result `unknown` (Section 4), with
 the outcome as its reason.
 
-| Response                                                                      | Outcome                 |
-| ----------------------------------------------------------------------------- | ----------------------- |
-| Network error, redirect, timeout, or failure reading the content              | `unavailable`           |
-| A `2xx` other than `200` labeled `application/httpv+json`                     | `invalid-advertisement` |
-| `404`, `405`, `406` or `501`, or a `2xx` not labeled `application/httpv+json` | `missing-certificate`   |
-| Any other non-`200` status                                                    | `unavailable`           |
-| Content over the client's bound, not UTF-8 JSON, or not the object above      | `invalid-advertisement` |
-| The object lacks the endpoint's method                                        | `missing-certificate`   |
-| That method's certificate is not well formed [ZKLEAN, Section 3.3]            | `invalid-advertisement` |
-| Otherwise                                                                     | The certificate         |
+| Response                                                                                                  | Outcome                 |
+| --------------------------------------------------------------------------------------------------------- | ----------------------- |
+| A target URI or method that Section 3.1 does not permit                                                   | `unavailable`           |
+| Network error, redirect, timeout, or failure reading the content                                          | `unavailable`           |
+| A `2xx` other than `200` labeled `application/httpv+json`                                                 | `invalid-advertisement` |
+| `404`, `405`, `406` or `501`, or a `2xx` not labeled `application/httpv+json`                             | `missing-certificate`   |
+| Any other non-`200` status                                                                                | `unavailable`           |
+| Content over the client's bound (including a read stopped there), not UTF-8 JSON, or not the object above | `invalid-advertisement` |
+| The object lacks the endpoint's method                                                                    | `missing-certificate`   |
+| That method's certificate is not well formed [ZKLEAN, Section 3.3]                                        | `invalid-advertisement` |
+| Otherwise                                                                                                 | The certificate         |
 
 `OPTIONS` responses are not cacheable [RFC9110, Section 9.3.7], so a client
 fetches the current certificate at each check.
@@ -344,12 +352,12 @@ theorem UnitInventory.conserves (stock : UnitInventory.Stock) :
 A client states the same proposition as an `axiom` over identical definitions,
 which gives the same identity, and requires it:
 
-| Server publishes                                  | Result                                                  |
-| ------------------------------------------------- | ------------------------------------------------------- |
-| Version 1, proving `conserves`                    | `verified`                                              |
-| Version 2, proving `conserves` and a second claim | `verified`                                              |
-| Version 3, accepting backorders                   | `incompatible`: the operation and the statement changed |
-| Version 2 with one proof byte altered             | `unknown`: the certificate does not verify              |
+| Server publishes                                  | Result                                                                                    |
+| ------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| Version 1, proving `conserves`                    | `verified`                                                                                |
+| Version 2, proving `conserves` and a second claim | `verified`                                                                                |
+| Version 3, accepting backorders                   | `incompatible`: `POST_units` changed, so the claim's statement refers to another function |
+| Version 2 with one proof byte altered             | `unknown`: the certificate does not verify                                                |
 
 ## Appendix B. Author
 
