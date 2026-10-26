@@ -1,12 +1,14 @@
+import { version } from "../package.json";
+
 /** The example's Lean modules and the artifacts generated from them. */
 export const project = "examples/inventory";
 const out = (name: string) => `${project}/certificates/${name}.json`;
 
-/** Each certificate's source: the export that `prove` writes beside it. ZKLean
- * re-verifies every identity, so the URL may follow main. */
+/** Each certificate's source: the export that `prove` writes beside it, at
+ * this release's tag, so later changes on main cannot move it. */
 export const exportFile = (out: string) => out.replace(/\.json$/, ".ndjson");
 export const sourceURL = (out: string) =>
-  `https://raw.githubusercontent.com/ZeframLou/httpv/main/${exportFile(out)}`;
+  `https://raw.githubusercontent.com/ZeframLou/httpv/v${version}/${exportFile(out)}`;
 
 export interface Model {
   module: string;

@@ -9,11 +9,11 @@ Install as in the [README](../README.md#get-started). For TypeScript checking,
 add `@types/bun` as a development dependency.
 
 Generating certificates and requirements needs the
-[ZKLean CLI](https://github.com/ZeframLou/zklean), run from a ZKLean checkout
-as `bun src/cli.ts` with its native checker and `lean4export` built (ZKLean's
-`CONTRIBUTING.md`); this guide writes it as `zklean`. Lean projects must select
-`leanprover/lean4:v4.36.0-rc1` in `lean-toolchain`. Checking certificates needs
-only the npm packages.
+[ZKLean CLI](https://github.com/ZeframLou/zklean), run from a checkout of
+ZKLean's `v0.1.0` tag as `bun src/cli.ts` with its native checker and
+`lean4export` built (ZKLean's `CONTRIBUTING.md`); this guide writes it as
+`zklean`. Lean projects must select `leanprover/lean4:v4.35.0` in
+`lean-toolchain`. Checking certificates needs only the installed packages.
 
 ## Serve a certificate
 
@@ -29,7 +29,8 @@ zklean prove --project . --module Inventory \
 `--axioms` must list every axiom the proofs use, or `prove` refuses.
 `--timeout` is in milliseconds; the default is one hour. Proving runs offline,
 takes tens of minutes to hours and several GB of memory, and needs ZKLean's
-proving setup (its `CONTRIBUTING.md`).
+prover build and the guest program attached to its `v0.1.0` GitHub release
+(its `CONTRIBUTING.md`).
 
 A certificate is typically under 1 KB; its size grows with the number of claims
 and axioms, not with the size of the proofs. It holds:
