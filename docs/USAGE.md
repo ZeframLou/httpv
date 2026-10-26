@@ -81,11 +81,12 @@ axiom, if they use another.
 
 Proving takes about 5 to 15 minutes and up to 20 GB of memory on a 12-core
 machine, and the first proof downloads 6.2 GB of proving files. It needs the
-prover build (the native tool built with SP1's prover) and `ZKLEAN_GUEST_ELF`,
-the path to ZKLean's downloaded checker program, both from ZKLean's
+prover build (the native tool built with the prover of SP1, the proving system
+ZKLean uses) and `ZKLEAN_GUEST_ELF`, the path to ZKLean's downloaded checker
+program, both from ZKLean's
 [Set up](https://github.com/ZeframLou/zklean/blob/v0.1.0/docs/USAGE.md#set-up),
-which needs Go 1.24, `protoc` and a C compiler. Prove the theorems into a certificate
-before deployment:
+which needs Go 1.24, `protoc` and a C compiler. Prove the theorems into a
+certificate before deployment:
 
 ```sh
 zklean prove --project . --module Inventory \
@@ -186,7 +187,8 @@ in a JSON file:
    place of `Inventory` below. To confirm the project is the one certified, save
    the endpoint's certificate and check the project's export against it. The
    `zklean` commands build the project with Lake, which runs its build code, so
-   review or sandbox a third-party project first:
+   review or sandbox a third-party project first. Run this in your client
+   project, where `httpv` is installed:
 
    ```sh
    bun -e 'import { createHTTPV } from "httpv";
@@ -296,9 +298,9 @@ about. Review the API's new Lean project; if your code still holds, regenerate
 `requirements.json` from it and commit it.
 
 `verified` and `incompatible` results also carry `statementId`, ZKLean's
-**statement digest**: a hash of everything the certificate proves. Compare it to
-notice a new certificate; do not compare certificate bytes, which can change
-without the claims changing.
+**statement digest**: a hash of everything the certificate proves. Compare it
+with your last result's to notice that what the API certifies has changed; do
+not compare certificate bytes, which can change without the claims changing.
 
 ### Recheck on a schedule
 

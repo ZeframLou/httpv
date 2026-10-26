@@ -11,6 +11,9 @@ check that certificate against the theorems its own correctness depends on.
 Clients discover certificates with `OPTIONS` and verify them locally. Ordinary
 requests and responses are unchanged.
 
+This document is for implementers of HTTPV clients and servers. To use the
+TypeScript library, see the [usage guide](docs/USAGE.md).
+
 ## 1. Introduction
 
 A client that depends on a remote API relies on assumptions about the API's
@@ -34,6 +37,8 @@ virtual machine [SP1] and summarizes the result as a short
 Groth16 [GROTH16] proof. "Certificate", "claim", "axiom", "identity" and
 "requirements" are as in ZKLean:
 
+- a **claim** is a proved Lean proposition, and an **axiom** is a proposition
+  a proof assumes without proving it;
 - a **certificate** names its proved claims and the axioms they use, each with
   an **identity** that covers its name, its statement and everything the
   statement refers to, but not its proof;
@@ -95,9 +100,9 @@ Cache-Control: no-cache
 
 A client MUST send `OPTIONS` to the endpoint's target URI with an `Accept`
 header field listing `application/httpv+json`. It MUST use `https`, except that
-it MAY use `http` to `localhost` [RFC6761] or a loopback address
-(`127.0.0.0/8` or `::1`) when the user allows it. The target URI MUST NOT
-contain userinfo or a fragment [RFC3986]. The client SHOULD send
+it MAY use `http` to the host name `localhost` itself [RFC6761] or a loopback
+address (`127.0.0.0/8` or `::1`) when the user allows it. The target URI MUST
+NOT contain userinfo or a fragment [RFC3986]. The client SHOULD send
 `Cache-Control: no-cache` [RFC9111], for intermediaries that cache `OPTIONS`
 despite [RFC9110], and MUST NOT follow redirects.
 
@@ -164,7 +169,7 @@ the outcome as its reason.
 
 | Response                                                                                                  | Outcome                 |
 | --------------------------------------------------------------------------------------------------------- | ----------------------- |
-| A target URI or method that Section 3.1 does not permit                                                   | `unavailable`           |
+| A target URI that Section 3.1 does not permit, or a method that is not a token [RFC9110, Section 9.1]     | `unavailable`           |
 | Network error, redirect, timeout, or failure reading the content                                          | `unavailable`           |
 | A `2xx` other than `200` labeled `application/httpv+json`                                                 | `invalid-advertisement` |
 | `404`, `405`, `406` or `501`, or a `2xx` not labeled `application/httpv+json`                             | `missing-certificate`   |
