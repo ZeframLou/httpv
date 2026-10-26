@@ -40,7 +40,9 @@ Groth16 [GROTH16] proof. "Certificate", "claim", "axiom", "identity" and
 - the **statement digest** [ZKLEAN, Section 3.4] is the hash of a certificate's
   `format`, `claims` and `axioms`;
 - **requirements** list claims, with identities, that a certificate must
-  prove.
+  prove;
+- a certificate's **source** is the URL of its export, the file of Lean
+  declarations its identities are computed from.
 
 In addition:
 
@@ -86,18 +88,19 @@ Accept: application/httpv+json
 Cache-Control: no-cache
 ```
 
-A client MUST use `https`, except that it MAY use `http` to `localhost` or a
+A client MUST send `OPTIONS` to the endpoint's target URI with an `Accept`
+header field listing `application/httpv+json`. It MUST use `https`, except that
+it MAY use `http` to `localhost` or a
 loopback address [RFC6761] when the user allows it. The target URI MUST NOT
 contain userinfo or a fragment [RFC3986]. The client SHOULD send
 `Cache-Control: no-cache` [RFC9111], for intermediaries that cache `OPTIONS`
 despite [RFC9110], and MUST NOT follow redirects.
 
-A server MUST treat an `OPTIONS` request as discovery only if its `Accept`
-header field lists the media range `application/httpv+json` itself, not only a
-wildcard, without the weight `q=0` [RFC9110, Section 12.4.2], and the request
-carries no `Access-Control-Request-Method`, which would make it a CORS preflight
-[FETCH]. The request target `*` is never discovery. Every other request is
-ordinary.
+A server MUST treat an `OPTIONS` request as discovery if and only if its target
+is not `*`, its `Accept` header field lists the media range
+`application/httpv+json` itself, not only a wildcard, without the weight `q=0`
+[RFC9110, Section 12.4.2], and it carries no `Access-Control-Request-Method`,
+which would make it a CORS preflight [FETCH]. Every other request is ordinary.
 
 ### 3.2. Response
 
@@ -323,8 +326,11 @@ Template for a future registration:
 
 ## Appendix A. Example
 
-An inventory service proves, for `POST /units`, that every accepted reservation
-consumes exactly one unit:
+An inventory service models stock as a count of units, `UnitInventory.Stock`,
+and `POST /units` as the function `UnitInventory.POST_units`, which reserves one
+unit or rejects empty stock. It proves `UnitInventory.Conserves`: every
+accepted reservation consumes exactly one unit, and only empty stock is
+rejected:
 
 ```lean
 theorem UnitInventory.conserves (stock : UnitInventory.Stock) :

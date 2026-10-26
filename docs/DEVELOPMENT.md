@@ -90,8 +90,8 @@ it.
 
 1. Regenerate the example's artifacts, run `bun run check` and
    `bun run check:certificates`, and commit the certificates and their exports.
-2. Tag the commit with the regenerated artifacts with the `version` in
-   `package.json`, such as `v0.1.0`, and push the tag. Each certificate names
+2. Tag that commit `v` followed by the `version` in `package.json`, such as
+   `v0.1.0`, and push the tag. Each certificate names
    its export at that tag, so clients can fetch its definitions only once the
    tag exists.
 3. Once the matching `zklean` version is on npm, publish HTTPV from an npm

@@ -18,7 +18,7 @@ With HTTPV, the service models the endpoint as a function, states its guarantee
 ("a reservation never exceeds available stock") as a mathematical statement
 about that function, proves it, and publishes a certificate of that proof next
 to the endpoint. Your client lists the guarantees it relies on and rechecks the
-proof on a schedule:
+certificate on a schedule:
 
 - If the service adds guarantees without changing the function your
   guarantees describe, the check passes.
@@ -47,7 +47,7 @@ Ordinary requests and responses are unchanged.
   new proof of the same statement does not change it.
 - **Axioms** are statements a proof assumes without proving. A false axiom can
   prove anything, so your client lists the ones it accepts, normally only
-  Lean's standard three.
+  Lean's standard three: `propext`, `Quot.sound` and `Classical.choice`.
 - Your **requirements** are the claims your code relies on, with their
   identities. A check passes only if the certificate proves all of them.
 

@@ -81,8 +81,10 @@ axiom, if they use another.
 
 Proving takes about 5 to 15 minutes and up to 20 GB of memory on a 12-core
 machine, and the first proof downloads 6.2 GB of proving files. It needs the
-prover setup in ZKLean's guide. Prove the theorems into a certificate before
-deployment:
+prover build and `ZKLEAN_GUEST_ELF` from ZKLean's
+[Set up](https://github.com/ZeframLou/zklean/blob/v0.1.0/docs/USAGE.md#set-up),
+which needs Go 1.24, `protoc` and a C compiler. Prove the theorems into a
+certificate before deployment:
 
 ```sh
 zklean prove --project . --module Inventory \
@@ -144,7 +146,7 @@ endpoint's URL that asks for `application/httpv+json`. `serve` answers those
 and passes every other request to your handler, including `OPTIONS` for paths
 without certificates and browser CORS preflight requests. Paths match exactly
 and the query is ignored. `serve` throws at startup if a static certificate is
-invalid.
+malformed; it does not verify proofs.
 
 Give each endpoint its own certificate, with claims about that endpoint only,
 so changing one endpoint never affects clients of another.
@@ -157,8 +159,9 @@ every discovery request:
 ```
 
 If the function throws or returns an invalid certificate, discovery for that
-path fails with `503`, so clients of every method on it get `unknown`
-(`unavailable`).
+path fails with `503`, so `check` returns status `unknown` with reason
+`unavailable` for every method on that path (see
+[Check an endpoint](#check-an-endpoint)).
 
 ## For client teams
 
@@ -174,12 +177,14 @@ in a JSON file:
 }
 ```
 
-1. Clone the API's Lean project, from its team, into `vendor/inventory`, and
-   review the theorems your code relies on. Make sure they are about the
-   function the endpoint implements. To confirm the project is the one
+1. Get the API's Lean project from its team into `vendor/inventory`, and review
+   the theorems your code relies on. Make sure they are about the function the
+   endpoint implements. If the team keeps its proofs private, it can share a
+   project with only the claims module, such as `Inventory.Spec`; use that
+   module in place of `Inventory` below. To confirm the project is the one
    certified, save the endpoint's certificate and check the project's export
-   against it. The `zklean` commands build the project with Lake, which runs
-   its build code, so review or sandbox a third-party project first:
+   against it. The `zklean` commands build the project with Lake, which runs its
+   build code, so review or sandbox a third-party project first:
 
    ```sh
    bun -e 'import { createHTTPV } from "httpv";
@@ -188,7 +193,8 @@ in a JSON file:
    await Bun.write("cert.json", JSON.stringify(certificate));'
    zklean export --project vendor/inventory --module Inventory \
      --claims Inventory.reservation_safe --out api.ndjson
-   zklean fetch --certificate cert.json --axioms propext \
+   zklean fetch --certificate cert.json \
+     --axioms propext,Quot.sound,Classical.choice \
      --from api.ndjson --out checked.ndjson
    ```
 
