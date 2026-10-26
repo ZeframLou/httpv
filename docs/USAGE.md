@@ -13,8 +13,8 @@ certificates, claims, identities, axioms and requirements.
 ## Install
 
 Both teams install the packages as in the
-[README](../README.md#get-started). For TypeScript checking, also add
-`@types/bun` as a development dependency.
+[README](../README.md#get-started). For TypeScript checking, also run
+`bun add -d @types/bun`.
 
 Writing certificates and requirements also needs the ZKLean command-line tool,
 which checks Lean proofs and generates certificates from them. Install it as
@@ -29,7 +29,10 @@ certificates needs only the packages.
 ### Model the endpoint in Lean
 
 Write the endpoint's behavior as a Lean function, and prove theorems about it
-that clients can rely on. A reservation endpoint might be:
+that clients can rely on. Create a Lean project with
+`lake new inventory lib`, set its `lean-toolchain` to
+`leanprover/lean4:v4.35.0`, and replace `Inventory.lean` with the model. A
+reservation endpoint might be:
 
 ```lean
 namespace Inventory
@@ -48,12 +51,15 @@ end Inventory
 ```
 
 Your server's code must behave as this function does; HTTPV certifies the
-function, not the code. [`examples/inventory`](../examples/inventory) is a
-complete project with three versions of an endpoint.
+function, not the code. [Lean's documentation](https://lean-lang.org/learn/)
+teaches writing proofs. [`examples/inventory`](../examples/inventory) is a
+complete project, under other names, with three versions of an endpoint.
 
 ### Generate the certificate
 
-Prove the theorems into a certificate before deployment:
+First run `zklean check` with the same `--project`, `--module`, `--claims` and
+`--axioms` flags: it checks the proofs in seconds and lists the axioms they
+use. Then prove the theorems into a certificate before deployment:
 
 ```sh
 zklean prove --project . --module Inventory \
@@ -67,7 +73,8 @@ zklean prove --project . --module Inventory \
 - `--source` is the URL where you will publish the **export**: a file of
   Lean's compiled form of the definitions behind the claims, from which anyone
   can recompute the claims' identities. `prove` writes it beside the
-  certificate, as `certs/reservations.ndjson`.
+  certificate, as `certs/reservations.ndjson`; publish it at that URL, for
+  example as a static file.
 
 The export also contains your proofs. To keep them private, write a module that
 states each claim as an `axiom` instead, and publish its export; a claim stated
@@ -139,9 +146,23 @@ in a JSON file:
 
 1. Get the API's Lean project from its team, and review the theorems your code
    relies on. Make sure they are about the function the endpoint implements.
-   To confirm the project is the one certified, export it with
-   `zklean export` and check that export against the endpoint's certificate
-   with `zklean fetch --certificate … --from FILE`.
+   To confirm the project is the one certified, save the endpoint's
+   certificate and check the project's export against it:
+
+   ```sh
+   bun -e 'import { createHTTPV } from "httpv";
+   const certificate = await createHTTPV().query(
+     "https://inventory.example.com/reservations", { method: "POST" });
+   await Bun.write("cert.json", JSON.stringify(certificate));'
+   zklean export --project vendor/inventory --module Inventory \
+     --claims Inventory.reservation_safe --out api.ndjson
+   zklean fetch --certificate cert.json --axioms propext \
+     --from api.ndjson --out checked.ndjson
+   ```
+
+   `fetch` fails, listing the mismatches, unless the project reproduces every
+   identity in the certificate.
+
 2. Generate requirements from that project, naming those theorems:
 
    ```sh
@@ -171,7 +192,7 @@ export const httpv = createHTTPV();
 ```
 
 The client verifies certificates itself, with ZKLean's built-in verifier. That
-verifier uses a **verifying key**: a public key, fixed in the ZKLean package,
+verifier uses a **verifier key**: a public key, fixed in the ZKLean package,
 that identifies ZKLean's proof checker. A certificate that verifies under it
 was produced by that checker. The key never comes from the API being checked,
 and the client needs no Lean installation or other native tools.
@@ -198,6 +219,9 @@ if (result.status !== "verified")
   );
 ```
 
+`axioms` lists the axioms you accept, by name and identity; `{}` accepts only
+certificates that use none.
+
 `check` fetches the endpoint's certificate, verifies it, and compares its
 claims with your requirements. It never throws; it returns a status and a
 reason:
@@ -218,15 +242,13 @@ reason:
     does not support HTTPV.
   - `invalid-advertisement`: a malformed discovery response.
 - **The certificate failed:**
-  - `invalid-certificate`: it is malformed or its proof does not verify.
+  - `invalid-certificate`: its proof does not verify, or a certificate passed
+    to `compare` is malformed.
   - `forbidden-axiom`: it uses an axiom you did not accept.
   - `axiom-mismatch`: it uses an accepted axiom's name with another identity.
   - `verifier-unavailable`: the verifier could not run.
 - **Your configuration failed:** `invalid-requirements`, including requirements
   with no claims and a malformed `axioms`.
-
-`axioms` lists the axioms you accept, by name and identity; `{}` accepts only
-certificates that use none.
 
 On `incompatible`, the API changed a claim you rely on or the function it is
 about. Review the API's new Lean project; if your code still holds, regenerate

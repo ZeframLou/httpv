@@ -36,11 +36,11 @@ Ordinary requests and responses are unchanged.
   and proves **theorems** about it, such as "a reservation never exceeds
   available stock". Proofs are checked mechanically.
 - **[ZKLean](https://github.com/ZeframLou/zklean)** checks those proofs
-  with an independent Lean proof checker inside a cryptographic proving system.
-  The result is a **certificate** that anyone can check quickly without seeing
-  or re-running the Lean proofs. It lists the proved theorems, called
-  **claims**, and a short **cryptographic proof** that the checker accepted
-  them.
+  with an independent Lean proof checker, run inside a **proving system**: a
+  program runner that also produces a short **cryptographic proof** that the
+  program ran and what it returned. Anyone can check that proof in under a
+  second, without the Lean proofs or a Lean installation. ZKLean packages it as
+  a **certificate**, which lists the proved theorems, called **claims**.
 - Each claim has an **identity**: a hash of its name, its statement, and
   everything the statement refers to, including the endpoint's function. If the
   API changes that function or the theorem's statement, the identity changes; a
@@ -62,11 +62,12 @@ Ordinary requests and responses are unchanged.
     certificate          ──▶                                     3. call, or block
 ```
 
-The API author proves once per release, offline, in about 5 to 15 minutes. The
+The API author proves once per release, offline, typically in 5 to 15 minutes.
+The
 server answers an HTTP `OPTIONS` request to the endpoint's own URL with the
 endpoint's certificate, and also publishes one file of the Lean definitions
-behind it. A certificate is under 1 KB and verifies in the client without a
-Lean installation.
+behind it. A certificate is typically under 1 KB and verifies in the client
+without a Lean installation.
 
 ## Trust model
 
@@ -119,6 +120,7 @@ const result = await createHTTPV().check({
 if (result.status === "verified")
   await fetch("https://inventory.example.com/reservations", {
     method: "POST",
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ quantity: 1 }),
   });
 ```

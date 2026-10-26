@@ -9,6 +9,8 @@ application, see the [usage guide](USAGE.md).
 Install Bun 1.4.4 or newer, then run:
 
 ```sh
+git clone https://github.com/ZeframLou/httpv.git
+cd httpv
 bun install --frozen-lockfile
 bun run check
 ```
@@ -43,8 +45,7 @@ current certificate format and are waiting to be re-proved. Until they are:
 
 `bun run check:certificates` rebuilds the example's Lean project and confirms
 that the committed requirements, certificates and exports all match it. It
-needs the ZKLean command-line tool from the release that `package.json`'s
-`zklean` dependency names, set up as in ZKLean's
+needs the ZKLean command-line tool from release v0.1.0, set up as in ZKLean's
 [usage guide](https://github.com/ZeframLou/zklean/blob/v0.1.0/docs/USAGE.md#set-up),
 and `ZKLEAN_CLI` set to that checkout's `src/cli.ts`:
 
@@ -62,14 +63,16 @@ export it was proved from, which the certificate names as its source. It needs
 ZKLean's prover setup from the same guide, including `ZKLEAN_GUEST_ELF`.
 
 Each example proof takes about 5 to 15 minutes and up to 20 GB of memory on a
-12-core machine. Run one proof at a time. These variables cap the prover's
-threads and the heap of its final proving step, which keeps peak memory near
-20 GB, and allow up to a day per proof:
+12-core machine. Run one proof at a time, with these variables capping the
+prover's threads and the heap of its final proving step; with them, the
+examples peaked at 19 GB:
 
 ```sh
-RAYON_NUM_THREADS=6 GOMAXPROCS=2 GOMEMLIMIT=6GiB GOGC=20 \
-ZKLEAN_PROVE_TIMEOUT=86400000 bun run prove
+RAYON_NUM_THREADS=6 GOMAXPROCS=2 GOMEMLIMIT=6GiB GOGC=20 bun run prove
 ```
+
+Each proof times out after ZKLean's default of one hour; set
+`ZKLEAN_PROVE_TIMEOUT` in milliseconds to change it.
 
 Review the diff before committing.
 

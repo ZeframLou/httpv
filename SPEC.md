@@ -51,7 +51,7 @@ In addition:
 - **Axiom policy:** the axioms, by name and identity, that a client accepts
   certificates to use.
 - **Verifier:** a client's implementation of ZKLean verification, with the
-  verifying key that identifies ZKLean's checker.
+  verifier key that identifies ZKLean's checker.
 
 ## 2. Overview
 
@@ -107,7 +107,8 @@ certificates for a path that its ordinary routing maps to a resource other than
 the endpoints those certificates describe. A
 path without certificates gets an ordinary response.
 
-Otherwise the server MUST respond `200 (OK)` with
+Otherwise, unless the server cannot produce a certificate (below), it MUST
+respond `200 (OK)` with
 `Content-Type: application/httpv+json` and an I-JSON [RFC7493] object, which
 SHOULD stay under 64 KiB and SHOULD carry `Cache-Control: no-store`:
 
@@ -150,7 +151,7 @@ reason.
 | Network error, redirect, timeout, or failure reading the content              | `unavailable`           |
 | A `2xx` other than `200` labeled `application/httpv+json`                     | `invalid-advertisement` |
 | `404`, `405`, `406` or `501`, or a `2xx` not labeled `application/httpv+json` | `missing-certificate`   |
-| Any other status other than `200`                                             | `unavailable`           |
+| Any other non-`200` status                                                    | `unavailable`           |
 | Content over the client's bound, not UTF-8 JSON, or not the object above      | `invalid-advertisement` |
 | The object lacks the endpoint's method                                        | `missing-certificate`   |
 | That method's certificate is not well formed [ZKLEAN]                         | `invalid-advertisement` |
@@ -174,6 +175,9 @@ A client MUST:
 | `verified`     | The certificate verifies and certifies every required claim.              |
 | `incompatible` | It verifies, but a required claim is missing or has another identity.     |
 | `unknown`      | Discovery failed, it does not verify, or the requirements cannot be read. |
+
+Each result carries a reason. Section 3.3 defines the reasons for failed
+discovery; other reasons are local to each implementation.
 
 An implementation MUST NOT report `unknown` or `incompatible` as `verified`.
 
