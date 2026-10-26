@@ -1,33 +1,33 @@
 # HTTPV
 
-HTTPV (HTTP Verified) is an HTTP protocol and TypeScript library for Bun that
-lets your code notice, before it sends a request, that an API it depends on no
-longer promises the behavior your code relies on. It is for teams whose code
-depends on another team's API, and for API teams that want to make promises
-clients can check by machine.
+**Find out before your next request that an API broke the promise your code
+depends on.**
+
+HTTPV is an HTTP protocol and TypeScript library for Bun. API teams publish
+machine-checkable proofs of how their endpoints behave. Client teams check
+those proofs before relying on them. Ordinary requests and responses are
+unchanged.
 
 ## Why
 
-API documentation and changelogs are promises that code cannot check. Suppose
-an inventory service's `POST /reservations` only ever reserves stock it has,
-and your checkout is built on that. Then the service starts accepting
-backorders. Your code is unchanged and every request still succeeds, but you
-are now selling stock that does not exist.
+Docs and changelogs are promises your code can't check. Say your checkout
+relies on an inventory service's `POST /reservations` never reserving more
+stock than it has. One day the service starts accepting backorders. Your code
+hasn't changed and every request still succeeds, but you are now selling stock
+that doesn't exist, and nothing tells you.
 
-With HTTPV, the service models the endpoint as a function, states its guarantee
-("a reservation never exceeds available stock") as a mathematical statement
-about that function, proves it, and publishes a certificate of that proof, a
-small file anyone can check by machine, next to the endpoint. Your client lists
-the guarantees it relies on and rechecks the certificate on a schedule:
+With HTTPV, the inventory team writes the endpoint as a small function, proves
+"a reservation never exceeds available stock", and publishes a certificate of
+that proof next to the endpoint. Your client names the guarantees it relies on
+and rechecks the certificate on a schedule:
 
-- If the service adds guarantees without changing the function your
-  guarantees describe, the check passes.
-- If it drops or changes a guarantee you rely on, or changes that function at
-  all, the check fails, so your code can block dependent requests, switch
-  provider, or alert someone. Even a harmless refactor fails until you review
-  it.
+- **They add a guarantee:** the check still passes.
+- **They drop or change one you rely on:** the check fails, so your code can
+  block the request, switch provider or alert someone before a bad order goes
+  through.
 
-Ordinary requests and responses are unchanged.
+The check is strict: any change to the function, even a harmless refactor,
+fails it until you review the change.
 
 ## Concepts
 
