@@ -108,7 +108,7 @@ test("axiom policies are enforced by name and identity", async () => {
   expect(
     await compare(fixtures.v1, { axioms: { propext: id("another propext") } }),
   ).toMatchObject({ status: "unknown", reason: "axiom-mismatch" });
-  // SPEC 5.3: these are never accepted, even when listed.
+  // SPEC 4: these are never accepted, even when listed.
   expect(
     await compare(fixtures.v1, { axioms: { ...axioms, sorryAx: id("sorry") } }),
   ).toMatchObject({ status: "unknown", reason: "invalid-requirements" });

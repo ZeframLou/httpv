@@ -8,10 +8,8 @@ machine-checkable proofs of how their endpoints behave. Client teams check those
 proofs with one function call, in under a second, with nothing extra to install.
 Ordinary requests and responses are unchanged.
 
-- **Client teams** stop calling an API as soon as their next check finds it no
-  longer guarantees what their code needs.
-- **API teams** get a contract clients can verify, so a breaking change shows
-  up in review instead of in a customer's incident.
+API teams get a contract clients can verify, so a breaking change shows up in
+review instead of in a customer's incident.
 
 The API team must publish proofs, so HTTPV fits internal services and partner
 APIs.
@@ -36,7 +34,7 @@ certificate on a schedule:
   through.
 
 Any change to the function, even a refactor, fails your check until your team
-reviews it and updates its requirements, so nothing changes under you unseen.
+reviews it.
 
 ## See it work
 
@@ -51,48 +49,30 @@ V2 adds a guarantee: verified (exact-match) -> {"remaining":1}
 V3 accepts backorders: incompatible (requirements-not-met) -> request blocked
 ```
 
-Version 2 adds a guarantee and still passes. Version 3 starts accepting
-backorders, so the client blocks it.
-
 ## How it works
 
-```text
- API author                     API server                       Client
- ──────────                     ──────────                       ──────
- Lean function + theorems       answers OPTIONS /reservations    1. verify the certificate
-        │ zklean prove          with the certificate        ──▶  2. compare its claims with
-        ▼                       for POST                            your requirements
-    certificate          ──▶                                     3. call, or block
-```
-
 1. The API author proves the guarantees once per release with
-   [ZKLean](https://github.com/ZeframLou/zklean), the proving tool HTTPV builds
-   on: about 5 to 15 minutes for a small model. The result is a certificate,
-   typically under 1 KB.
+   [ZKLean](https://github.com/ZeframLou/zklean), in about 5 to 15 minutes for a
+   small model. The result is a certificate under 1 KB.
 2. The server answers an HTTP `OPTIONS` request to the endpoint's own URL with
-   that certificate. It also publishes the certificate's Lean definitions as a
-   single file.
-3. The client verifies the certificate in under a second, without Lean
-   installed, and checks that it still proves every guarantee the client
-   relies on.
+   that certificate.
+3. The client verifies the certificate without Lean and checks that it proves
+   every requirement.
 
 ## Concepts
 
 - **Certificate:** a small file that lists proved theorems, called **claims**,
   with a cryptographic receipt that ZKLean's Lean checker accepted the proofs.
-  Anyone can check the receipt without the proofs or Lean.
 - **Identity:** a fingerprint of a claim and the code it is about. Change
   either and the identity changes; re-proving the same thing doesn't.
-- **Requirements:** the claims your code relies on, with their identities. A
-  check passes only if the certificate proves all of them.
+- **Requirements:** the claims your code relies on, with their identities.
 - **Axioms:** statements a proof assumes without proving. A false axiom can
   prove anything, so your client accepts only the ones it lists, normally
   Lean's three standard axioms (`standardAxioms`).
 
 ## Get started
 
-HTTPV runs on [Bun](https://bun.sh/) 1.4.4 or newer. Install it with the ZKLean
-SDK it builds on:
+HTTPV runs on [Bun](https://bun.sh/) 1.4.4 or newer. Install it with ZKLean:
 
 ```sh
 bun add zklean@0.1.0 httpv@0.1.0
@@ -114,8 +94,7 @@ Bun.serve({
 });
 ```
 
-**Client:** list the guarantees you rely on, and check before relying on the
-endpoint.
+**Client:** check the guarantees you rely on before each call.
 
 ```ts
 import { createHTTPV, standardAxioms } from "httpv";
@@ -123,7 +102,7 @@ import { createHTTPV, standardAxioms } from "httpv";
 const result = await createHTTPV().check({
   url: "https://inventory.example.com/reservations",
   method: "POST",
-  requirements: "./requirements.json", // the guarantees you rely on
+  requirements: "./requirements.json",
   axioms: standardAxioms, // the assumptions you accept
 });
 if (result.status === "verified")

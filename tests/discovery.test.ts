@@ -130,7 +130,7 @@ test("discovery accepts only the closed httpv/1 envelope", async () => {
     ).rejects.toMatchObject({ reason: "invalid-advertisement" });
 });
 
-test("responses are classified as SPEC 3.3 says", async () => {
+test("responses are classified as SPEC 2.3 says", async () => {
   // A valid envelope padded to exactly 64 KiB is read; one byte more is not.
   const sent: RequestInit[] = [];
   const padded = (size: number) =>

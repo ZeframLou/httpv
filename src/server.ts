@@ -34,7 +34,7 @@ export function serve<Args extends unknown[]>({
     // A path the URL parser would rewrite could never match a request.
     if (
       extra !== undefined ||
-      // A runtime may present `OPTIONS *` as the path `/*` (SPEC 3.1).
+      // A runtime may present `OPTIONS *` as the path `/*` (SPEC 2.1).
       path === "/*" ||
       new URL(path, "http://host").pathname !== path
     )

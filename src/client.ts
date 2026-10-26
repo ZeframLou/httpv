@@ -16,10 +16,10 @@ import type {
   Result,
 } from "./types.ts";
 
-/** Every client accepts responses this large (SPEC 3.3), and reads no more. */
+/** Every client accepts responses this large (SPEC 2.3), and reads no more. */
 const MAX_DISCOVERY_BYTES = 64 * 1024;
 
-/** SPEC 5.3: never accept these, whatever the caller lists. */
+/** SPEC 4: never accept these, whatever the caller lists. */
 const UNSAFE_AXIOMS = ["sorryAx", "Lean.ofReduceBool", "Lean.trustCompiler"];
 
 /** Plain HTTP is only for a server on this machine. */
@@ -116,7 +116,7 @@ export function createHTTPV(options: ClientOptions = {}) {
       .toLowerCase();
     if (response.status !== 200 || type !== MEDIA_TYPE) {
       await response.body?.cancel().catch(() => {});
-      // The classification table in SPEC 3.3.
+      // The classification table in SPEC 2.3.
       const reason =
         type === MEDIA_TYPE && response.ok
           ? "invalid-advertisement"
