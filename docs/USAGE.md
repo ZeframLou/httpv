@@ -64,20 +64,28 @@ zklean prove --project . --module Inventory \
 
 - `--claims` names the theorems the certificate proves.
 - `--axioms` must list every axiom the proofs use, or `prove` refuses.
-- `--source` is the URL where you will publish the **export**: a file of the
-  Lean definitions behind the claims. `prove` writes it beside the certificate,
-  as `certs/reservations.ndjson`. Clients read it to see exactly what each
-  claim says. The export also contains your proofs; to keep them private,
-  publish instead the export of a module that states each claim as an `axiom`,
-  which has the same identities.
+- `--source` is the URL where you will publish the **export**: a file of
+  Lean's compiled form of the definitions behind the claims, from which anyone
+  can recompute the claims' identities. `prove` writes it beside the
+  certificate, as `certs/reservations.ndjson`.
+
+The export also contains your proofs. To keep them private, write a module that
+states each claim as an `axiom` instead, and publish its export; a claim stated
+as an axiom has the same identity as the proved theorem:
+
+```sh
+zklean export --project . --module InventorySpec \
+  --claims Inventory.reservation_safe --out certs/reservations.ndjson
+```
 
 Proving takes about 5 to 15 minutes and up to 20 GB of memory on a 12-core
-machine, and needs the prover setup in ZKLean's guide. A certificate is
-typically under 1 KB, whatever the size of the proofs.
+machine, and the first proof downloads 6.2 GB of proving files. It needs the
+prover setup in ZKLean's guide. A certificate is typically under 1 KB, whatever
+the size of the proofs.
 
 ### Serve the certificate
 
-Wrap your existing Fetch handler:
+Wrap your existing request handler, a function from `Request` to `Response`:
 
 ```ts
 import { serve } from "httpv";
@@ -98,7 +106,8 @@ Clients fetch a certificate with **discovery**: an `OPTIONS` request to the
 endpoint's URL that asks for `application/httpv+json`. `serve` answers those
 and passes every other request to your handler, including `OPTIONS` for paths
 without certificates and browser CORS preflight requests. Paths match exactly
-and the query is ignored. `serve` checks static certificates when it is called.
+and the query is ignored. `serve` throws at startup if a static certificate is
+invalid.
 
 Give each endpoint its own certificate, with claims about that endpoint only,
 so changing one endpoint never affects clients of another.
@@ -111,7 +120,8 @@ every discovery request:
 ```
 
 If the function throws or returns an invalid certificate, discovery for that
-path fails with `503`, so clients of every method on it get no result.
+path fails with `503`, so clients of every method on it get `unknown`
+(`unavailable`).
 
 ## For client teams
 
@@ -129,6 +139,9 @@ in a JSON file:
 
 1. Get the API's Lean project from its team, and review the theorems your code
    relies on. Make sure they are about the function the endpoint implements.
+   To confirm the project is the one certified, export it with
+   `zklean export` and check that export against the endpoint's certificate
+   with `zklean fetch --certificate … --from FILE`.
 2. Generate requirements from that project, naming those theorems:
 
    ```sh
@@ -204,15 +217,20 @@ reason:
   - `missing-certificate`: no certificate for this method, or a server that
     does not support HTTPV.
   - `invalid-advertisement`: a malformed discovery response.
-- **The certificate failed:** `invalid-certificate`, `forbidden-axiom`,
-  `axiom-mismatch` or `verifier-unavailable`.
+- **The certificate failed:**
+  - `invalid-certificate`: it is malformed or its proof does not verify.
+  - `forbidden-axiom`: it uses an axiom you did not accept.
+  - `axiom-mismatch`: it uses an accepted axiom's name with another identity.
+  - `verifier-unavailable`: the verifier could not run.
 - **Your configuration failed:** `invalid-requirements`, including requirements
   with no claims and a malformed `axioms`.
 
 `axioms` lists the axioms you accept, by name and identity; `{}` accepts only
-certificates that use none. A certificate using an axiom you did not list is
-`forbidden-axiom`, and one whose axiom has a different identity is
-`axiom-mismatch`.
+certificates that use none.
+
+On `incompatible`, the API changed a claim you rely on or the function it is
+about. Review the API's new Lean project; if your code still holds, regenerate
+`requirements.json` from it and commit it.
 
 A result that got as far as verifying also carries `statementId`, an identity
 of everything the certificate proves. Compare it to notice a new certificate;
@@ -240,6 +258,7 @@ async function reserve(quantity: number) {
     throw new Error(`inventory requirements: ${latest.reason}`);
   return fetch(inventory.url, {
     method: "POST",
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ quantity }),
   });
 }
@@ -266,6 +285,6 @@ endpoint description passed to `check`.
 - `createHTTPV({ fetch })` uses another transport, which must not follow
   redirects or relax TLS.
 - `createHTTPV({ backend })` uses another verifier. A backend has an `identity`
-  string naming its trusted configuration (unrelated to claim identities) and
-  an async `verify(certificate)` returning a boolean. It is trusted to decide
-  whether the proof establishes the certificate's claims and axioms.
+  string, a label for its trusted configuration unrelated to claim identities,
+  and an async `verify(certificate)` returning a boolean. It is trusted to
+  decide whether the proof establishes the certificate's claims and axioms.

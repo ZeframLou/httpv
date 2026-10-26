@@ -45,8 +45,9 @@ Ordinary requests and responses are unchanged.
   everything the statement refers to, including the endpoint's function. If the
   API changes that function or the theorem's statement, the identity changes; a
   new proof of the same statement does not change it.
-- **Axioms** are statements a proof assumes without proving. Your client lists
-  the ones it accepts.
+- **Axioms** are statements a proof assumes without proving. A false axiom can
+  prove anything, so your client lists the ones it accepts, normally only
+  Lean's standard three.
 - Your **requirements** are the claims your code relies on, with their
   identities. A check passes only if the certificate proves all of them.
 
@@ -61,11 +62,11 @@ Ordinary requests and responses are unchanged.
     certificate          ──▶                                     3. call, or block
 ```
 
-The API author proves once per release, offline, which takes minutes. The
-server publishes each endpoint's certificate in answer to an HTTP `OPTIONS`
-request for the endpoint's own URL, so no new URLs are needed. Clients fetch it
-there; a certificate is under 1 KB and verifies in the client without a Lean
-installation.
+The API author proves once per release, offline, in about 5 to 15 minutes. The
+server answers an HTTP `OPTIONS` request to the endpoint's own URL with the
+endpoint's certificate, and also publishes one file of the Lean definitions
+behind it. A certificate is under 1 KB and verifies in the client without a
+Lean installation.
 
 ## Trust model
 
@@ -103,7 +104,8 @@ Bun.serve({
 ```
 
 **Client:** describe the endpoint and your requirements, and check before
-relying on it.
+relying on it. Generating `requirements.json` needs the ZKLean command-line tool
+and the API's Lean project; the [usage guide](docs/USAGE.md) shows how.
 
 ```ts
 import { createHTTPV, standardAxioms } from "httpv";
@@ -115,7 +117,10 @@ const result = await createHTTPV().check({
   axioms: standardAxioms, // Lean's propext, Quot.sound and Classical.choice
 });
 if (result.status === "verified")
-  await fetch("https://inventory.example.com/reservations", { method: "POST" });
+  await fetch("https://inventory.example.com/reservations", {
+    method: "POST",
+    body: JSON.stringify({ quantity: 1 }),
+  });
 ```
 
 [`examples/upgrades.ts`](examples/upgrades.ts) serves three versions of an

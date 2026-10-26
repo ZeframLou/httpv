@@ -1,6 +1,7 @@
 # HTTP Verified (HTTPV)
 
 **Version `httpv/1`** · Stable: a change to the wire format takes a new version.
+The media type name is provisional until registered (Section 7).
 
 ## Abstract
 
@@ -128,12 +129,13 @@ SHOULD stay under 64 KiB and SHOULD carry `Cache-Control: no-store`:
 The object has exactly the members `format` (`"httpv/1"`) and `certificates`,
 which maps each method token [RFC9110, Section 9.1] to that endpoint's
 certificate. Method names are case-sensitive; because Fetch [FETCH] uppercases
-`DELETE`, `GET`, `HEAD`, `OPTIONS`, `POST` and `PUT`, servers write those six in
-uppercase and clients normalize them the same way before lookup.
+`DELETE`, `GET`, `HEAD`, `OPTIONS`, `POST` and `PUT`, servers MUST write those
+six in uppercase, and clients MUST uppercase them before lookup.
 
 A server SHOULD give each endpoint a certificate about that endpoint only, so a
 change to one endpoint does not disturb clients of another. If it cannot
-produce a certificate it publishes, it MUST respond with a `5xx` status not
+produce a certificate it advertises for the path, for example because a
+dynamic source fails, it MUST respond with a `5xx` status not
 labeled `application/httpv+json`.
 
 ### 3.3. Client processing
@@ -150,7 +152,7 @@ reason.
 | `404`, `405`, `406` or `501`, or a `2xx` not labeled `application/httpv+json` | `missing-certificate`   |
 | Any other status other than `200`                                             | `unavailable`           |
 | Content over the client's bound, not UTF-8 JSON, or not the object above      | `invalid-advertisement` |
-| The object lacks the requested method                                         | `missing-certificate`   |
+| The object lacks the endpoint's method                                        | `missing-certificate`   |
 | That method's certificate is not well formed [ZKLEAN]                         | `invalid-advertisement` |
 | Otherwise                                                                     | The certificate         |
 

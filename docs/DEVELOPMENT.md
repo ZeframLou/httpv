@@ -43,8 +43,8 @@ current certificate format and are waiting to be re-proved. Until they are:
 
 `bun run check:certificates` rebuilds the example's Lean project and confirms
 that the committed requirements, certificates and exports all match it. It
-needs the ZKLean command-line tool from the release named in `package.json`,
-set up as in ZKLean's
+needs the ZKLean command-line tool from the release that `package.json`'s
+`zklean` dependency names, set up as in ZKLean's
 [usage guide](https://github.com/ZeframLou/zklean/blob/v0.1.0/docs/USAGE.md#set-up),
 and `ZKLEAN_CLI` set to that checkout's `src/cli.ts`:
 
@@ -63,8 +63,8 @@ ZKLean's prover setup from the same guide, including `ZKLEAN_GUEST_ELF`.
 
 Each example proof takes about 5 to 15 minutes and up to 20 GB of memory on a
 12-core machine. Run one proof at a time. These variables cap the prover's
-threads and the heap of its final proving step, and allow up to a day per
-proof:
+threads and the heap of its final proving step, which keeps peak memory near
+20 GB, and allow up to a day per proof:
 
 ```sh
 RAYON_NUM_THREADS=6 GOMAXPROCS=2 GOMEMLIMIT=6GiB GOGC=20 \
@@ -88,7 +88,8 @@ it.
 2. Tag that commit with the `version` in `package.json`, such as `v0.1.0`, and
    push the tag. Each certificate names its export at that tag, so clients can
    fetch its definitions only once the tag exists.
-3. After ZKLean's package is published to npm, publish HTTPV:
+3. After ZKLean's package is published to npm, publish HTTPV from an npm
+   account that owns the `httpv` package:
 
    ```sh
    bun run check
