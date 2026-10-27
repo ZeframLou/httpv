@@ -55,13 +55,11 @@ export it was proved from, which the certificate names as its source. It needs
 `ZKLEAN_CLI` as above and ZKLean's prover setup from the same guide, including
 `ZKLEAN_GUEST_ELF`.
 
-Each example proof takes about 5 to 15 minutes and, with the caps below, up to
-20 GB of memory on a 12-core machine. Run one proof at a time. These variables
-cap the prover's threads and the heap of its final proving step, which use more
-memory without them:
+On a 12-core machine with 32 GB of memory, each example proof takes about 8
+minutes and up to 18 GB. Run one proof at a time, capping the prover's threads:
 
 ```sh
-RAYON_NUM_THREADS=6 GOMAXPROCS=2 GOMEMLIMIT=6GiB GOGC=20 bun run prove
+RAYON_NUM_THREADS=10 bun run prove
 ```
 
 Each proof times out after ZKLean's default of one hour. To change it, set
