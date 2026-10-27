@@ -99,7 +99,7 @@ zklean prove --project . --module Inventory \
 Wrap your existing request handler, a function from `Request` to `Response`:
 
 ```ts
-import { serve } from "httpv";
+import { serve } from "zklean-httpv";
 import { fetch as application } from "./app.ts";
 
 Bun.serve({
@@ -160,10 +160,10 @@ sandbox third-party projects.
    endpoint implements.
 2. Confirm it is the certified project: save the endpoint's certificate and
    check the project's export against it. Run this in your client project,
-   where `httpv` is installed:
+   where `zklean-httpv` is installed:
 
    ```sh
-   bun -e 'import { createHTTPV } from "httpv";
+   bun -e 'import { createHTTPV } from "zklean-httpv";
    const certificate = await createHTTPV().query(
      "https://inventory.example.com/reservations", { method: "POST" });
    await Bun.write("cert.json", JSON.stringify(certificate));'
@@ -201,7 +201,7 @@ and require the API's claims.
 Save this as `httpv.ts`:
 
 ```ts
-import { createHTTPV } from "httpv";
+import { createHTTPV } from "zklean-httpv";
 
 export const httpv = createHTTPV();
 ```
@@ -215,7 +215,7 @@ It needs no Lean or native tools.
 Describe the endpoint once, then check it:
 
 ```ts
-import { standardAxioms } from "httpv";
+import { standardAxioms } from "zklean-httpv";
 import { httpv } from "./httpv.ts";
 
 const inventory = {

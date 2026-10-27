@@ -51,7 +51,7 @@ guarantees become dependencies of your proofs.
 ## Install
 
 ```sh
-bun add zklean@0.1.0 httpv@0.1.0
+bun add zklean@0.1.0 zklean-httpv@0.1.0
 ```
 
 HTTPV runs on [Bun](https://bun.sh/) 1.4.4 or newer. Proving certificates uses
@@ -76,7 +76,7 @@ V3 accepts backorders: incompatible (requirements-not-met) -> request blocked
 **Server:** serve each endpoint's certificate alongside your existing handler.
 
 ```ts
-import { serve } from "httpv";
+import { serve } from "zklean-httpv";
 
 Bun.serve({
   ...serve({
@@ -92,7 +92,7 @@ Bun.serve({
 **Client:** check the guarantees you rely on before each call.
 
 ```ts
-import { createHTTPV, standardAxioms } from "httpv";
+import { createHTTPV, standardAxioms } from "zklean-httpv";
 
 const result = await createHTTPV().check({
   url: "https://inventory.example.com/reservations",

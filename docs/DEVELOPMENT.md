@@ -85,7 +85,7 @@ tools or Lean installed. A second job builds the pinned ZKLean tool and runs
    `v0.1.0`, and push the tag. Each certificate names its export at that tag, so
    clients can fetch its definitions only once the tag exists.
 4. Once the matching `zklean` version is on npm, publish HTTPV from an npm
-   account that owns the `httpv` package:
+   account that owns the `zklean-httpv` package:
 
    ```sh
    npm pack --dry-run  # lists the files that will be published

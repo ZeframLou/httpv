@@ -1,5 +1,5 @@
 {
-  "name": "httpv",
+  "name": "zklean-httpv",
   "version": "0.1.0",
   "description": "Discover and verify certificates of API behavior over HTTP",
   "license": "SEE LICENSE IN LICENSE",

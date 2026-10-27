@@ -1,7 +1,7 @@
 /** A supplier upgrades POST /units twice. The client keeps sending requests only
  * while the advertised certificate still establishes the requirement its proof uses. */
-import { createHTTPV, serve } from "httpv";
-import type { Certificate } from "httpv";
+import { createHTTPV, serve } from "zklean-httpv";
+import type { Certificate } from "zklean-httpv";
 
 const load = (name: string) =>
   Bun.file(
