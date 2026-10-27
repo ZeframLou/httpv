@@ -38,7 +38,7 @@ jobs:
       - id: sdk
         name: Read the development SDK pin
         run: |
-          bun -e 'import p from "./package.json"; const ref=p.devDependencies.zklean.split("#")[1]; if(!/^(v\d+\.\d+\.\d+|[0-9a-f]{40})$/.test(ref)) throw new Error("pin the SDK to a release tag or commit"); console.log("ref="+ref)' >> "$GITHUB_OUTPUT"
+          bun -e 'import p from "./package.json"; const pin=p.devDependencies.zklean; const ref=/^\d+\.\d+\.\d+$/.test(pin) ? "v"+pin : pin.split("#")[1]; if(!/^(v\d+\.\d+\.\d+|[0-9a-f]{40})$/.test(ref)) throw new Error("pin the SDK to a version, release tag or commit"); console.log("ref="+ref)' >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@v4
         with:
           repository: ZeframLou/zklean
